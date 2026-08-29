@@ -42,7 +42,13 @@ import {
   clearOwnerAttachmentRefs,
   collectAndDeleteUnreferencedBlobs,
 } from "../../utils/attachmentRefStore";
-import { normalizeSelectedText, sanitizeText, setStatus } from "./textUtils";
+import {
+  escapeNoteHtml,
+  getCurrentLocalTimestamp,
+  normalizeSelectedText,
+  sanitizeText,
+  setStatus,
+} from "./textUtils";
 import { copyTextToClipboard, zoneBSummaryCache } from "./chat";
 import {
   getItemSelectionCacheKeys,
@@ -74,7 +80,11 @@ import {
   translateSelectedTextForReader,
 } from "./selectionTranslate";
 import { EPUB_CONTENT_TYPE, getReaderDocumentKind } from "./documentContext";
-import { appendSelectionTranslationToNote } from "./notes";
+import {
+  appendSelectionTranslationToNote,
+  appendToLiteratureNoteSection,
+  type LiteratureNoteSection,
+} from "./notes";
 import {
   PANEL_TYPOGRAPHY_REFRESH_EVENT,
   SELECTION_POPUP_HEIGHT_BOUNDS,
@@ -169,6 +179,7 @@ export function removeLLMStyles(win: Window) {
 
 export function registerReaderContextPanel() {
   if (readerContextPanelRegistered) return;
+  ztoolkit.log("AIdea: registerReaderContextPanel");
   unregisterReaderContextPanel();
   const sectionKey = Zotero.ItemPaneManager.registerSection({
     paneID: PANE_ID,
@@ -182,6 +193,7 @@ export function registerReaderContextPanel() {
       icon: `chrome://${config.addonRef}/content/icons/icon-20.png`,
     },
     onInit: ({ body, setEnabled, tabType }) => {
+      ztoolkit.log("AIdea: reader onInit", { tabType });
       // Reader tabs and selected Library items use Zotero's managed
       // section so native item-pane sections remain selectable.
       const enabled = shouldEnablePanelSection(body, tabType);
@@ -196,6 +208,7 @@ export function registerReaderContextPanel() {
       );
     },
     onRender: ({ body, item, tabType }) => {
+      ztoolkit.log("AIdea: reader onRender", { tabType, itemId: item?.id });
       ztoolkit.log(
         `LLM: panel onRender tabType=${tabType} hasItem=${Boolean(item)}`,
       );
@@ -233,6 +246,9 @@ export function registerReaderContextPanel() {
               body.appendChild(host);
             }
             host.style.display = "flex";
+            ztoolkit.log("AIdea: reader panel host mounted", {
+              itemId: renderItem.id,
+            });
           }
           // Removed: scrollSectionIntoView(body) — was hijacking sidebar scroll
         } catch (err) {
@@ -248,6 +264,10 @@ export function registerReaderContextPanel() {
       }
     },
     onAsyncRender: async ({ body, item, setEnabled, tabType }) => {
+      ztoolkit.log("AIdea: reader onAsyncRender", {
+        tabType,
+        itemId: item?.id,
+      });
       const enabled = shouldEnablePanelSection(body, tabType, item);
       setEnabled(enabled);
       ztoolkit.log(
@@ -286,6 +306,7 @@ export function registerReaderContextPanel() {
           readerItem = documentFromTab;
         }
       }
+      ztoolkit.log("AIdea: resolved reader item", { itemId: readerItem.id });
 
       const host = getSharedReaderPanelHostForItem(win, readerItem);
 
@@ -1946,6 +1967,93 @@ export function registerReaderSelectionTracking() {
           selectionTranslateRelayout?.();
         } catch (err) {
           ztoolkit.log("LLM: failed to append Add Text popup button", err);
+        }
+      }
+
+      // This uses the official reader selection event only.  Annotation colour
+      // is a convenience default; when Reader does not expose it we leave the
+      // final section selection to the user instead of inspecting PDF.js DOM.
+      if (selectedText && item) {
+        try {
+          const colour = String(
+            event.params?.annotation?.color || "",
+          ).toLowerCase();
+          const defaults: Record<string, LiteratureNoteSection> = {
+            yellow: "evidence",
+            "#ffd400": "evidence",
+            red: "questions",
+            "#ff6666": "questions",
+            green: "reusable-info",
+            "#5fb236": "reusable-info",
+          };
+          const selector = event.doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "select",
+          ) as HTMLSelectElement;
+          selector.title = "Literature Note section";
+          const sections: Array<[LiteratureNoteSection, string]> = [
+            ["question", "Question"],
+            ["system", "System"],
+            ["key-findings", "Key findings"],
+            ["evidence", "Evidence"],
+            ["limitations", "Limitations"],
+            ["use-for-my-project", "Use for my project"],
+            ["reusable-info", "Reusable info"],
+            ["questions", "Questions"],
+          ];
+          for (const [value, label] of sections) {
+            const option = event.doc.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            selector.appendChild(option);
+          }
+          selector.value = defaults[colour] || "key-findings";
+          const save = event.doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "button",
+          ) as HTMLButtonElement;
+          save.type = "button";
+          save.textContent = "Add to Literature Note";
+          save.style.cssText =
+            "display:block;width:100%;margin:3px 0 0;padding:6px 8px;box-sizing:border-box;border:1px solid rgba(130,130,130,.38);border-radius:6px;background:rgba(37,99,235,.14);color:inherit;font-size:12px;cursor:pointer";
+          const add = async (e: Event) => {
+            if (save.dataset.handled === "true") return;
+            save.dataset.handled = "true";
+            e.preventDefault();
+            e.stopPropagation();
+            save.disabled = true;
+            try {
+              const text =
+                normalizeSelectedText(selectedText) ||
+                resolveSelectedTextForPopupAction();
+              if (!text) return;
+              const page = resolveSelectionPageLabel();
+              const source = [page, `selection`, getCurrentLocalTimestamp()]
+                .filter(Boolean)
+                .join(" • ");
+              await appendToLiteratureNoteSection(
+                item,
+                selector.value as LiteratureNoteSection,
+                `<blockquote>${escapeNoteHtml(text).replace(/\n/g, "<br/>")}</blockquote><p><small>${escapeNoteHtml(source)}</small></p>`,
+              );
+              save.textContent = "Added to Literature Note";
+            } catch (error) {
+              save.disabled = false;
+              save.textContent = "Add to Literature Note failed";
+              ztoolkit.log(
+                "AIdea: add reader selection to Literature Note failed",
+                error,
+              );
+            }
+          };
+          save.addEventListener("pointerdown", add, { once: true });
+          save.addEventListener("click", add, { once: true });
+          event.append(selector, save);
+        } catch (error) {
+          ztoolkit.log(
+            "AIdea: failed to append Literature Note selection action",
+            error,
+          );
         }
       }
 

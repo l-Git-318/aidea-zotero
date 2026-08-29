@@ -1,4 +1,5 @@
 import { createElement } from "../../utils/domHelpers";
+import { renderMarkdownForNote } from "../../utils/markdown";
 import {
   AUTO_SCROLL_BOTTOM_THRESHOLD,
   INLINE_CONTEXT_COLLAPSE_THRESHOLD,
@@ -120,6 +121,7 @@ import { getReaderDocumentCapabilities } from "./documentContext";
 import { getDocumentAdapterForItem } from "./document/registry";
 import { captureScreenshotSelection, optimizeImageDataUrl } from "./screenshot";
 import {
+  appendToLiteratureNoteSection,
   createNoteFromAssistantText,
   createNoteFromChatHistory,
   createStandaloneNoteFromChatHistory,
@@ -1041,6 +1043,39 @@ export function setupHandlers(body: Element, initialItem?: Zotero.Item | null) {
           ztoolkit.log("Create note failed:", err);
           if (status)
             setStatus(status, getPanelI18n().failedToCreateNote, "error");
+        }
+      });
+      const responseLiteratureBtn = body.querySelector(
+        "#aidea-response-menu-literature",
+      ) as HTMLButtonElement | null;
+      const responseLiteratureSection = body.querySelector(
+        "#aidea-response-note-section",
+      ) as HTMLSelectElement | null;
+      responseLiteratureBtn?.addEventListener("click", async (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = responseMenuTarget;
+        closeResponseMenu();
+        if (
+          !target?.item ||
+          !target.contentText ||
+          isGlobalPortalItem(target.item)
+        )
+          return;
+        try {
+          await appendToLiteratureNoteSection(
+            target.item,
+            (responseLiteratureSection?.value || "key-findings") as any,
+            `<p><small>AI response${target.modelName ? ` • ${target.modelName}` : ""}</small></p><div>${renderMarkdownForNote(target.contentText)}</div>`,
+          );
+          if (status) setStatus(status, "Added to Literature Note", "ready");
+        } catch (err) {
+          ztoolkit.log(
+            "AIdea: add assistant response to Literature Note failed",
+            err,
+          );
+          if (status)
+            setStatus(status, "Failed to add to Literature Note", "error");
         }
       });
       responseMenuExportImageBtn?.addEventListener(

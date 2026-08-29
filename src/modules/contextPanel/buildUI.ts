@@ -1187,6 +1187,36 @@ function buildUI(body: Element, item?: Zotero.Item | null) {
       textContent: i18n.saveAsNote,
     },
   );
+  const responseLiteratureSection = createElement(
+    doc,
+    "select",
+    "llm-response-menu-item",
+    { id: "aidea-response-note-section" },
+  ) as HTMLSelectElement;
+  for (const [value, label] of [
+    ["key-findings", "Key findings"],
+    ["evidence", "Evidence"],
+    ["limitations", "Limitations"],
+    ["use-for-my-project", "Use for my project"],
+    ["reusable-info", "Reusable info"],
+    ["questions", "Questions"],
+  ]) {
+    const option = createElement(doc, "option", "", {
+      value,
+      textContent: label,
+    });
+    responseLiteratureSection.appendChild(option);
+  }
+  const responseMenuLiteratureBtn = createElement(
+    doc,
+    "button",
+    "llm-response-menu-item",
+    {
+      id: "aidea-response-menu-literature",
+      type: "button",
+      textContent: "Add to Literature Note",
+    },
+  );
   const responseMenuExportImageBtn = createElement(
     doc,
     "button",
@@ -1201,6 +1231,8 @@ function buildUI(body: Element, item?: Zotero.Item | null) {
   responseMenu.append(
     responseMenuCopyBtn,
     responseMenuNoteBtn,
+    responseLiteratureSection,
+    responseMenuLiteratureBtn,
     responseMenuExportImageBtn,
   );
   container.appendChild(responseMenu);

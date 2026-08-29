@@ -519,3 +519,300 @@ export async function createStandaloneNoteFromChatHistory(
     `LLM: Created standalone chat history note in library ${normalizedLibraryID}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Literature Note backend
+//
+// These notes deliberately live in Zotero's normal child-note model.  The
+// marker is content based (rather than a preference or an item id), so it
+// remains stable when a library is synced, exported, or restored.
+// ---------------------------------------------------------------------------
+
+export const LITERATURE_NOTE_MARKER = "AIdea Literature Note";
+
+const literatureNoteCreationByParent = new Map<
+  string,
+  Promise<LiteratureNote>
+>();
+
+export const LITERATURE_NOTE_SECTIONS = [
+  "question",
+  "system",
+  "key-findings",
+  "evidence",
+  "limitations",
+  "use-for-my-project",
+  "reusable-info",
+  "questions",
+] as const;
+
+export type LiteratureNoteSection = (typeof LITERATURE_NOTE_SECTIONS)[number];
+
+export type LiteratureNoteMetadata = {
+  title: string;
+  authors: string;
+  journal: string;
+  year: string;
+  doi: string;
+};
+
+export type LiteratureNote = {
+  item: Zotero.Item;
+  parentItem: Zotero.Item;
+  metadata: LiteratureNoteMetadata;
+  sections: Record<LiteratureNoteSection, string>;
+};
+
+const LITERATURE_SECTION_LABELS: Record<LiteratureNoteSection, string> = {
+  question: "Question",
+  system: "System",
+  "key-findings": "Key findings",
+  evidence: "Evidence",
+  limitations: "Limitations",
+  "use-for-my-project": "Use for my project",
+  "reusable-info": "Reusable info",
+  questions: "Questions / Follow-up",
+};
+
+export function resolveLiteratureNoteParent(
+  item: Zotero.Item,
+): Zotero.Item | null {
+  return resolveParentItemForNote(item);
+}
+
+export function getLiteratureNoteMetadata(
+  item: Zotero.Item,
+): LiteratureNoteMetadata {
+  const parent = resolveParentItemForNote(item) || item;
+  const creators = (() => {
+    try {
+      return (parent.getCreators?.() || [])
+        .map(
+          (creator: any) =>
+            [creator.firstName, creator.lastName].filter(Boolean).join(" ") ||
+            creator.name ||
+            "",
+        )
+        .filter(Boolean)
+        .join(", ");
+    } catch {
+      return "";
+    }
+  })();
+  const field = (name: string) => {
+    try {
+      return String(parent.getField?.(name) || "").trim();
+    } catch {
+      return "";
+    }
+  };
+  return {
+    title: field("title"),
+    authors: creators,
+    journal: field("publicationTitle"),
+    year: field("date").match(/\d{4}/)?.[0] || field("date"),
+    doi: field("DOI"),
+  };
+}
+
+function escapeLiteratureHtml(value: string): string {
+  return escapeNoteHtml(String(value || "")).replace(/\n/g, "<br/>");
+}
+
+function emptyLiteratureSections(): Record<LiteratureNoteSection, string> {
+  return Object.fromEntries(
+    LITERATURE_NOTE_SECTIONS.map((section) => [section, ""]),
+  ) as Record<LiteratureNoteSection, string>;
+}
+
+function renderLiteratureNoteHtml(
+  metadata: LiteratureNoteMetadata,
+  sections: Record<LiteratureNoteSection, string>,
+): string {
+  const metaRows = [
+    ["Title", metadata.title],
+    ["Authors", metadata.authors],
+    ["Journal", metadata.journal],
+    ["Year", metadata.year],
+    ["DOI", metadata.doi],
+  ]
+    .map(
+      ([label, value]) =>
+        `<p><strong>${label}:</strong> ${escapeLiteratureHtml(value)}</p>`,
+    )
+    .join("");
+  const bodies = LITERATURE_NOTE_SECTIONS.map((section) => {
+    const body = sections[section] || "";
+    return `<h2 data-aidea-literature-section="${section}">${LITERATURE_SECTION_LABELS[section]}</h2><div data-aidea-literature-body="${section}">${body}</div>`;
+  }).join("");
+  return `<h1>${LITERATURE_NOTE_MARKER}</h1><div data-aidea-literature-note="1"><h2>Metadata</h2><div data-aidea-literature-metadata="1">${metaRows}</div>${bodies}</div>`;
+}
+
+function extractLiteratureSection(
+  html: string,
+  section: LiteratureNoteSection,
+): string {
+  const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(
+    `<div\\s+data-aidea-literature-body=["']${escaped}["'][^>]*>`,
+    "i",
+  ).exec(String(html || ""));
+  if (!match || match.index === undefined) return "";
+  const start = match.index + match[0].length;
+  // Section bodies may contain Markdown-rendered nested divs.  Locate the
+  // matching closing div instead of slicing to the next heading, which would
+  // accidentally include this body's closing tag and corrupt the next save.
+  const tags = /<\/?div\b[^>]*>/gi;
+  tags.lastIndex = start;
+  let depth = 1;
+  let tag: RegExpExecArray | null;
+  while ((tag = tags.exec(html))) {
+    if (/^<\/div\b/i.test(tag[0])) depth -= 1;
+    else depth += 1;
+    if (depth === 0) return html.slice(start, tag.index);
+  }
+  return "";
+}
+
+// Exported for regression tests.  Production callers should use load/update.
+export function extractLiteratureNoteSectionHtml(
+  html: string,
+  section: LiteratureNoteSection,
+): string {
+  return extractLiteratureSection(html, section);
+}
+
+function parseLiteratureNote(
+  note: Zotero.Item,
+  parentItem: Zotero.Item,
+): LiteratureNote {
+  const html = String(note.getNote?.() || "");
+  const sections = emptyLiteratureSections();
+  for (const section of LITERATURE_NOTE_SECTIONS) {
+    sections[section] = extractLiteratureSection(html, section);
+  }
+  return {
+    item: note,
+    parentItem,
+    metadata: getLiteratureNoteMetadata(parentItem),
+    sections,
+  };
+}
+
+function isLiteratureNote(note: Zotero.Item | null): boolean {
+  if (!note || !note.isNote?.()) return false;
+  try {
+    return String(note.getNote?.() || "").includes(LITERATURE_NOTE_MARKER);
+  } catch {
+    return false;
+  }
+}
+
+/** Locate the one canonical Literature Note for a regular item or attachment. */
+export async function findLiteratureNote(
+  item: Zotero.Item,
+): Promise<LiteratureNote | null> {
+  const parentItem = resolveLiteratureNoteParent(item);
+  if (!parentItem) return null;
+  const ids = new Set<number>();
+  try {
+    for (const rawId of (await (parentItem as any).getNotes?.()) || []) {
+      const id = Number(rawId);
+      if (Number.isFinite(id) && id > 0) ids.add(Math.floor(id));
+    }
+  } catch {
+    // A library scan below is retained for older Zotero APIs.
+  }
+  for (const id of ids) {
+    const note = getZoteroItem(id);
+    if (isLiteratureNote(note)) return parseLiteratureNote(note!, parentItem);
+  }
+  try {
+    const candidates = await Zotero.Items.getAll(
+      parentItem.libraryID,
+      true,
+      false,
+      false,
+    );
+    for (const candidate of candidates) {
+      if (candidate.parentID === parentItem.id && isLiteratureNote(candidate)) {
+        return parseLiteratureNote(candidate, parentItem);
+      }
+    }
+  } catch (err) {
+    ztoolkit.log("AIdea: literature note lookup failed", err);
+  }
+  return null;
+}
+
+export async function createLiteratureNote(
+  item: Zotero.Item,
+): Promise<LiteratureNote> {
+  const parentItem = resolveLiteratureNoteParent(item);
+  if (!parentItem)
+    throw new Error("Literature Note requires a regular parent item");
+  const key = `${parentItem.libraryID}:${parentItem.id}`;
+  const active = literatureNoteCreationByParent.get(key);
+  if (active) return active;
+  const creation = (async () => {
+    // Recheck *inside* the per-parent critical section. Reader selection and
+    // the Notes view can request a note concurrently.
+    const existing = await findLiteratureNote(parentItem);
+    if (existing) return existing;
+    const note = new Zotero.Item("note");
+    note.libraryID = parentItem.libraryID;
+    note.parentID = parentItem.id;
+    const metadata = getLiteratureNoteMetadata(parentItem);
+    const sections = emptyLiteratureSections();
+    note.setNote(renderLiteratureNoteHtml(metadata, sections));
+    await note.saveTx();
+    ztoolkit.log(
+      `AIdea: created Literature Note ${note.id} for parent ${parentItem.id}`,
+    );
+    return { item: note, parentItem, metadata, sections };
+  })();
+  literatureNoteCreationByParent.set(key, creation);
+  try {
+    return await creation;
+  } finally {
+    if (literatureNoteCreationByParent.get(key) === creation) {
+      literatureNoteCreationByParent.delete(key);
+    }
+  }
+}
+
+export async function loadLiteratureNote(
+  item: Zotero.Item,
+): Promise<LiteratureNote> {
+  return (await findLiteratureNote(item)) || createLiteratureNote(item);
+}
+
+export async function updateLiteratureNote(
+  item: Zotero.Item,
+  updates: Partial<Record<LiteratureNoteSection, string>>,
+): Promise<LiteratureNote> {
+  const current = await loadLiteratureNote(item);
+  const sections = { ...current.sections };
+  for (const section of LITERATURE_NOTE_SECTIONS) {
+    if (updates[section] !== undefined)
+      sections[section] = String(updates[section] || "");
+  }
+  current.item.setNote(renderLiteratureNoteHtml(current.metadata, sections));
+  await current.item.saveTx();
+  ztoolkit.log(`AIdea: saved Literature Note ${current.item.id}`);
+  return { ...current, sections };
+}
+
+export async function appendToLiteratureNoteSection(
+  item: Zotero.Item,
+  section: LiteratureNoteSection,
+  html: string,
+): Promise<LiteratureNote> {
+  const current = await loadLiteratureNote(item);
+  const addition = String(html || "").trim();
+  if (!addition) return current;
+  const previous = current.sections[section] || "";
+  return updateLiteratureNote(item, {
+    [section]: previous ? `${previous}<hr/>${addition}` : addition,
+  });
+}

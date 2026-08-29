@@ -1,5 +1,154 @@
 /* LLM Panel Styles */
 
+/* Reader-only mode switch. Chat stays mounted but Notes owns the full panel. */
+#llm-reader-panel-host {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#llm-reader-panel-host > #llm-main,
+#llm-reader-panel-host > .aidea-literature-notes {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+#llm-reader-panel-host > [hidden] {
+  display: none !important;
+}
+
+.aidea-reader-mode-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 0 0 6px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--fill-quinary);
+}
+
+.aidea-reader-mode {
+  min-width: 0;
+  border: 0;
+  border-radius: 5px;
+  padding: 5px;
+  color: var(--fill-secondary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.aidea-reader-mode.active {
+  color: #fff;
+  background: #2563eb;
+}
+
+.aidea-literature-notes {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 10px;
+  padding: 4px 2px 10px;
+  min-width: 0;
+  overflow: auto;
+  color: var(--fill-primary);
+}
+
+.aidea-literature-notes h2 {
+  margin: 2px 0;
+  font-size: 1.05em;
+}
+.aidea-literature-metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 7px;
+  margin: 0;
+  font-size: 0.88em;
+}
+.aidea-literature-metadata dt {
+  color: var(--fill-secondary);
+}
+.aidea-literature-metadata dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.aidea-literature-section {
+  display: grid;
+  gap: 4px;
+}
+.aidea-literature-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.aidea-literature-section label {
+  font-weight: 600;
+}
+.aidea-literature-ai-fill {
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: var(--fill-primary);
+  background: var(--fill-quaternary);
+  font: inherit;
+  font-size: 0.84em;
+  cursor: pointer;
+}
+.aidea-literature-ai-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 7px;
+  background: var(--fill-quaternary);
+}
+.aidea-literature-ai-controls label {
+  color: var(--fill-secondary);
+  font-size: 0.85em;
+}
+.aidea-literature-language {
+  min-width: 74px;
+  padding: 3px 5px;
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 5px;
+  color: var(--fill-primary);
+  background: var(--material-background);
+  font: inherit;
+  font-size: 0.88em;
+}
+.aidea-literature-ai-controls .aidea-literature-ai-fill {
+  margin-left: auto;
+}
+.aidea-literature-section textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  resize: vertical;
+  color: var(--fill-primary);
+  background: var(--fill-quaternary);
+  border: 1px solid var(--stroke-secondary);
+  border-radius: 5px;
+  padding: 6px;
+  font: inherit;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.aidea-literature-status {
+  color: var(--fill-secondary);
+  font-size: 0.85em;
+}
+
 /* ═══════════════════════════════════════════════════════════
    Tab Navigation
    ═══════════════════════════════════════════════════════════ */

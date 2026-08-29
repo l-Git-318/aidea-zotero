@@ -140,19 +140,19 @@ function registerPrefsPane() {
 async function onMainWindowUnload(win: Window): Promise<void> {
   unregisterOAuthEnvUpdateSchedulerWindow(win);
   removeLibraryPanel(win);
-  removeReaderPanels(win);
+  await removeReaderPanels(win);
   removeLLMStyles(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
 
-function onShutdown(): void {
+async function onShutdown(): Promise<void> {
   try {
     for (const win of Zotero.getMainWindows()) {
       try {
         unregisterOAuthEnvUpdateSchedulerWindow(win);
         removeLibraryPanel(win);
-        removeReaderPanels(win);
+        await removeReaderPanels(win);
         removeLLMStyles(win);
       } catch (err) {
         ztoolkit.log("LLM: failed to clean up main window on shutdown", err);

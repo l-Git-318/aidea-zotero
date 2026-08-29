@@ -32,6 +32,10 @@ import {
   initChatStore,
 } from "../../utils/chatStore";
 import { getPanelI18n } from "./i18n";
+import {
+  flushLiteratureNotesPanel,
+  mountLiteratureNotesPanel,
+} from "./literatureNotesPanel";
 
 // ---------------------------------------------------------------------------
 // State
@@ -102,6 +106,7 @@ export async function bootstrapSharedReaderPanel(
   state.hasBootstrapped = true;
 
   try {
+    ztoolkit.log(`AIdea: reader panel bootstrap started item=${item.id}`);
     await initChatStore();
 
     // ── Resolve active paper conversation key ──
@@ -121,10 +126,12 @@ export async function bootstrapSharedReaderPanel(
     }
 
     buildUI(host, item);
+    mountLiteratureNotesPanel(host, item);
     await ensureConversationLoaded(item);
     await renderShortcuts(host, item);
     setupHandlers(host, item);
     refreshChat(host, item);
+    ztoolkit.log(`AIdea: reader panel bootstrap completed item=${item.id}`);
 
     // Defer document extraction so the panel becomes interactive sooner.
     // Use the panel's own item directly — getActiveContextAttachmentFromTabs()
@@ -169,7 +176,7 @@ export async function bootstrapSharedReaderPanel(
       }
     }
   } catch (err) {
-    ztoolkit.log(`LLM: bootstrapSharedReaderPanel failed: ${err}`);
+    ztoolkit.log("AIdea: reader panel bootstrap failed", err);
     state.hasBootstrapped = false;
   } finally {
     resolveBootstrap();
@@ -185,6 +192,9 @@ export function invalidateSharedReaderPanelForItem(
   const map = getWindowMap(win);
   const state = map.get(key);
   if (state) {
+    void flushLiteratureNotesPanel(state.host).catch((err) =>
+      ztoolkit.log("AIdea: Literature Note flush failed", err),
+    );
     const heightSync = (
       state.host as typeof state.host & {
         __llmHeightSync?: { dispose?: () => void } | null;
@@ -198,10 +208,15 @@ export function invalidateSharedReaderPanelForItem(
   }
 }
 
-export function removeReaderPanels(win: Window): void {
+export async function removeReaderPanels(win: Window): Promise<void> {
   const map = panelStateByWindow.get(win);
   if (!map) return;
   for (const [, state] of map) {
+    try {
+      await flushLiteratureNotesPanel(state.host);
+    } catch (err) {
+      ztoolkit.log("AIdea: Literature Note shutdown flush failed", err);
+    }
     const heightSync = (
       state.host as typeof state.host & {
         __llmHeightSync?: { dispose?: () => void } | null;
