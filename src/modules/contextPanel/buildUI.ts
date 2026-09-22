@@ -15,7 +15,7 @@ import { applyCurrentThemeToRoot } from "./theme";
 type PanelTab = "discussion" | "translate" | "setting";
 
 const PANEL_TABS: PanelTab[] = ["discussion", "translate", "setting"];
-const PANEL_ICON_URL = `chrome://${config.addonRef}/content/icons/icon-96.png`;
+const PANEL_ICON_URL = `chrome://${config.addonRef}/content/icons/paper-assistant-96.png`;
 const TAB_ICON_MAP: Record<PanelTab, string> = {
   discussion: PANEL_ICON_URL,
   translate: PANEL_ICON_URL,

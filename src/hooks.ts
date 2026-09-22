@@ -124,7 +124,7 @@ function registerPrefsPane() {
     id: PREF_PANE_ID,
     src: `chrome://${addon.data.config.addonRef}/content/preferences.xhtml`,
     label: "Paper Assistant",
-    image: `chrome://${addon.data.config.addonRef}/content/icons/icon-20.png`,
+    image: `chrome://${addon.data.config.addonRef}/content/icons/paper-assistant-20.png`,
   });
 }
 

@@ -186,11 +186,11 @@ export function registerReaderContextPanel() {
     pluginID: config.addonID,
     header: {
       l10nID: getLocaleID("llm-panel-head"),
-      icon: `chrome://${config.addonRef}/content/icons/icon-20.png`,
+      icon: `chrome://${config.addonRef}/content/icons/paper-assistant-20.png`,
     },
     sidenav: {
       l10nID: getLocaleID("llm-panel-sidenav-tooltip"),
-      icon: `chrome://${config.addonRef}/content/icons/icon-20.png`,
+      icon: `chrome://${config.addonRef}/content/icons/paper-assistant-20.png`,
     },
     onInit: ({ body, setEnabled, tabType }) => {
       ztoolkit.log("AIdea: reader onInit", { tabType });

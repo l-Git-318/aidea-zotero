@@ -277,8 +277,8 @@ function ensureStandaloneLibrarySidenavButton(win: Window): void {
   button.setAttribute("aria-selected", "false");
   button.title = "AIdea";
   button.style.cssText = [
-    `--custom-sidenav-icon-light: url('chrome://${config.addonRef}/content/icons/icon-20.png')`,
-    `--custom-sidenav-icon-dark: url('chrome://${config.addonRef}/content/icons/icon-20.png')`,
+    `--custom-sidenav-icon-light: url('chrome://${config.addonRef}/content/icons/paper-assistant-20.png')`,
+    `--custom-sidenav-icon-dark: url('chrome://${config.addonRef}/content/icons/paper-assistant-20.png')`,
   ].join("; ");
   button.addEventListener("click", (event) => {
     event.preventDefault();

@@ -234,7 +234,7 @@ export function mountLiteratureNotesPanel(
       const brand = doc.createElement("div");
       brand.className = "paperassistant-note-brand";
       const icon = doc.createElement("img");
-      icon.src = `chrome://${config.addonRef}/content/icons/icon-96.png`;
+      icon.src = `chrome://${config.addonRef}/content/icons/paper-assistant-96.png`;
       icon.alt = "";
       const heading = doc.createElement("div");
       const title = doc.createElement("h2");

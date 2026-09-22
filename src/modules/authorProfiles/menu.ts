@@ -8,7 +8,7 @@ import { getAuthorProfileCopy } from "./i18n";
 import { getAuthorProfileLanguage, getBoolPref } from "./utils";
 
 const MENU_ID = `${config.addonRef}-author-profiles-context-menu`;
-const MENU_ICON = `chrome://${config.addonRef}/content/icons/icon-20.png`;
+const MENU_ICON = `chrome://${config.addonRef}/content/icons/paper-assistant-20.png`;
 
 let registered = false;
 
