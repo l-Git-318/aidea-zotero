@@ -1,18 +1,17 @@
 {
   "manifest_version": 2,
-  "name": "__addonName__",
-  "version": "__buildVersion__",
-  "description": "__description__",
-  "homepage_url": "__homepage__",
-  "author": "__author__",
+  "name": "Paper Assistant",
+  "version": "1.0.0",
+  "description": "Paper Assistant: AI literature assistant for Zotero",
+  "homepage_url": "https://github.com/l-Git-318/aidea-zotero#readme",
+  "author": "l-Git-318",
   "icons": {
     "48": "content/icons/icon-48.png",
     "96": "content/icons/icon-96.png"
   },
   "applications": {
     "zotero": {
-      "id": "__addonID__",
-      "update_url": "__updateURL__",
+      "id": "paper-assistant@l-git-318",
       "strict_min_version": "6.999",
       "strict_max_version": "10.*"
     }

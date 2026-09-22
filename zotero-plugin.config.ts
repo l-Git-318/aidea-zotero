@@ -8,13 +8,12 @@ export default defineConfig({
   id: pkg.config.addonID,
   namespace: pkg.config.addonRef,
   xpiName: `${pkg.config.addonName}-${pkg.version}`,
-  updateURL: `https://github.com/{{owner}}/{{repo}}/releases/download/release/${
-    pkg.version.includes("-") ? "update-beta.json" : "update.json"
-  }`,
-  xpiDownloadLink:
-    "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
-
   build: {
+    // Keep the source manifest unchanged so no update_url is injected by the
+    // scaffold's default manifest generator.
+    makeManifest: {
+      enable: false,
+    },
     assets: ["addon/**/*.*"],
     define: {
       ...pkg.config,

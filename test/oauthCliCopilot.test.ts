@@ -5,7 +5,7 @@ import {
   parseCopilotModelsResponse,
 } from "../src/utils/oauthCli";
 
-const OAUTH_PREF_PREFIX = "extensions.zotero.aidea.";
+const OAUTH_PREF_PREFIX = "extensions.zotero.paperassistant.";
 
 function buildCopilotSseResponse(text: string): Response {
   const body =

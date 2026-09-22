@@ -1,4 +1,4 @@
-pref-title = AIdea
+pref-title = Paper Assistant
 pref-api-base = API 基础 URL
 pref-api-key = 密钥 / API Key
 pref-model = 模型名称
@@ -9,5 +9,5 @@ pref-test-running = 测试中...
 pref-test-success = 连接成功
 pref-test-failed = 连接失败
 pref-sidebar-moved-title = 设置已迁移至侧边栏
-pref-sidebar-moved-desc = AIdea 插件设置已迁移到主聊天侧边栏的选项卡界面。
+pref-sidebar-moved-desc = Paper Assistant 的设置位于主聊天侧边栏的选项卡界面。
 pref-sidebar-moved-action = 请打开 PDF 或在文库中选择一个条目，然后在 Zotero 侧边栏中切换到“设置”选项卡。

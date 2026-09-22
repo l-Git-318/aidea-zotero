@@ -4,8 +4,8 @@ type PreferenceScriptModule = typeof import("../src/modules/preferenceScript");
 
 type PrefStore = Map<string, unknown>;
 
-const PREF_PREFIX = "extensions.zotero.aidea";
-const ADDON_REF = "aidea";
+const PREF_PREFIX = "extensions.zotero.paperassistant";
+const ADDON_REF = "paperassistant";
 
 let preferenceScript: PreferenceScriptModule;
 let prefStore: PrefStore;

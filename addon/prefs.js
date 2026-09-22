@@ -25,7 +25,6 @@ pref("oauthEnvUpdateMode", "notify");
 pref("providerModelSectionState", "");
 pref("contextPanel.lastActiveTab.library", "discussion");
 pref("contextPanel.lastActiveTab.reader", "discussion");
-pref("updateNoticeSeen", "");
 pref("settingsSectionState", "");
 pref("settingsScrollTop", "0");
 pref("uiLanguage", "");

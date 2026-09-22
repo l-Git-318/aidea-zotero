@@ -2,7 +2,7 @@ import { assert } from "chai";
 
 type ThemeModule = typeof import("../src/modules/contextPanel/theme");
 
-const PREF_PREFIX = "extensions.zotero.aidea";
+const PREF_PREFIX = "extensions.zotero.paperassistant";
 
 let theme: ThemeModule;
 let prefStore: Map<string, unknown>;

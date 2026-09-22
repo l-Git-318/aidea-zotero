@@ -40,7 +40,7 @@ function buildAssistantNoteHtml(
     ztoolkit.log("Note markdown render error:", err);
     responseHtml = escapeNoteHtml(response).replace(/\n/g, "<br/>");
   }
-  return `<p><strong>${escapeNoteHtml(timestamp)}</strong></p><p><strong>${escapeNoteHtml(source)}:</strong></p><div>${responseHtml}</div><hr/><p>Written by AIdea plugin</p>`;
+  return `<p><strong>${escapeNoteHtml(timestamp)}</strong></p><p><strong>${escapeNoteHtml(source)}:</strong></p><div>${responseHtml}</div><hr/><p>Written by Paper Assistant</p>`;
 }
 
 function renderChatMessageHtmlForNote(text: string): string {
@@ -120,7 +120,7 @@ export function buildChatHistoryNotePayload(messages: Message[]): {
   const bodyHtml = htmlBlocks.join("<hr/>");
   return {
     noteText,
-    noteHtml: `<p><strong>Chat history saved at ${escapeNoteHtml(timestamp)}</strong></p><div>${bodyHtml}</div><hr/><p>Written by AIdea plugin</p>`,
+    noteHtml: `<p><strong>Chat history saved at ${escapeNoteHtml(timestamp)}</strong></p><div>${bodyHtml}</div><hr/><p>Written by Paper Assistant</p>`,
   };
 }
 
@@ -135,7 +135,8 @@ function appendAssistantAnswerToNoteHtml(
   return `${base}<hr/>${addition}`;
 }
 
-const SELECTION_TRANSLATION_NOTE_TITLE = "AIdea \u5212\u8bcd\u7ffb\u8bd1";
+const SELECTION_TRANSLATION_NOTE_TITLE =
+  "Paper Assistant \u5212\u8bcd\u7ffb\u8bd1";
 
 type SelectionTranslationNoteCopy = {
   original: string;
@@ -528,7 +529,7 @@ export async function createStandaloneNoteFromChatHistory(
 // remains stable when a library is synced, exported, or restored.
 // ---------------------------------------------------------------------------
 
-export const LITERATURE_NOTE_MARKER = "AIdea Literature Note";
+export const LITERATURE_NOTE_MARKER = "Paper Assistant Literature Note";
 
 const literatureNoteCreationByParent = new Map<
   string,

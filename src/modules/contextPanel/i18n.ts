@@ -4,6 +4,7 @@ import {
   normalizeUiLanguageCode,
   type PanelLang,
 } from "./languages";
+import { config } from "../../../package.json";
 
 export type { PanelLang };
 
@@ -320,7 +321,7 @@ declare const Zotero: any;
 export function getPanelLang(): PanelLang {
   try {
     const pref = String(
-      Zotero.Prefs.get("extensions.zotero.aidea.uiLanguage", true) || "",
+      Zotero.Prefs.get(`${config.prefsPrefix}.uiLanguage`, true) || "",
     ).trim();
     const saved = normalizeUiLanguageCode(pref);
     if (saved) return saved;

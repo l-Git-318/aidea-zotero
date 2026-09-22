@@ -7,7 +7,7 @@ type LlmClientModule = typeof import("../src/utils/llmClient");
 
 type PrefStore = Map<string, unknown>;
 
-const PREF_PREFIX = "extensions.zotero.aidea";
+const PREF_PREFIX = "extensions.zotero.paperassistant";
 
 let prefHelpers: PrefHelpersModule;
 let stateModule: StateModule;

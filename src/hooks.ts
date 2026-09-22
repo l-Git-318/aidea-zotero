@@ -24,7 +24,6 @@ import {
 import { initSelectionTranslateCacheStore } from "./utils/selectionTranslateCacheStore";
 import { createZToolkit } from "./utils/ztoolkit";
 import { ensureZoteroProxyFromSystem } from "./utils/oauthCli";
-import { maybeShowOpenAIUpdateNotice } from "./modules/updateNotice";
 import {
   registerOAuthEnvUpdateSchedulerWindow,
   shutdownOAuthEnvUpdateScheduler,
@@ -111,14 +110,6 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   registerReaderSelectionTracking();
   await injectLibraryPanel(win);
 
-  win.setTimeout(() => {
-    try {
-      maybeShowOpenAIUpdateNotice(win);
-    } catch (err) {
-      ztoolkit.log("AIdea: failed to show update notice", err);
-    }
-  }, 600);
-
   registerOAuthEnvUpdateSchedulerWindow(win);
 }
 
@@ -132,7 +123,7 @@ function registerPrefsPane() {
     pluginID: addon.data.config.addonID,
     id: PREF_PANE_ID,
     src: `chrome://${addon.data.config.addonRef}/content/preferences.xhtml`,
-    label: "AIdea",
+    label: "Paper Assistant",
     image: `chrome://${addon.data.config.addonRef}/content/icons/icon-20.png`,
   });
 }

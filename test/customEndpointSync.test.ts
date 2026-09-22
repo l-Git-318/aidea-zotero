@@ -7,7 +7,7 @@ type ProviderModelSelectionCache =
 
 type PrefStore = Map<string, unknown>;
 
-const PREF_PREFIX = "extensions.zotero.aidea";
+const PREF_PREFIX = "extensions.zotero.paperassistant";
 
 let preferenceScript: PreferenceScriptModule;
 let prefStore: PrefStore;

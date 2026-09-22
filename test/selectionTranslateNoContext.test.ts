@@ -100,16 +100,19 @@ async function assertTranslatesWithEmptyContext(params: {
 describe("selection translation without document context", function () {
   before(async function () {
     const prefs = new Map<string, unknown>([
-      ["extensions.zotero.aidea.selectionTranslate.enabled", true],
-      ["extensions.zotero.aidea.primaryConnectionMode", "custom"],
+      ["extensions.zotero.paperassistant.selectionTranslate.enabled", true],
+      ["extensions.zotero.paperassistant.primaryConnectionMode", "custom"],
       [
-        "extensions.zotero.aidea.apiBase",
+        "extensions.zotero.paperassistant.apiBase",
         "https://api.example.test/v1/chat/completions",
       ],
-      ["extensions.zotero.aidea.apiKey", "test-key"],
-      ["extensions.zotero.aidea.model", "gpt-4o-mini"],
-      ["extensions.zotero.aidea.selectionTranslate.sourceLang", "en"],
-      ["extensions.zotero.aidea.selectionTranslate.targetLang", "zh-CN"],
+      ["extensions.zotero.paperassistant.apiKey", "test-key"],
+      ["extensions.zotero.paperassistant.model", "gpt-4o-mini"],
+      ["extensions.zotero.paperassistant.selectionTranslate.sourceLang", "en"],
+      [
+        "extensions.zotero.paperassistant.selectionTranslate.targetLang",
+        "zh-CN",
+      ],
     ]);
     (globalThis as Record<string, unknown>).Zotero = {
       Prefs: {

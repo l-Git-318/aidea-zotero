@@ -34,7 +34,6 @@ declare namespace _ZoteroTypes {
       "providerModelSectionState": string;
       "contextPanel.lastActiveTab.library": string;
       "contextPanel.lastActiveTab.reader": string;
-      "updateNoticeSeen": string;
       "settingsSectionState": string;
       "settingsScrollTop": string;
       "uiLanguage": string;

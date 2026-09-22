@@ -5,7 +5,7 @@ type StateModule = typeof import("../src/modules/contextPanel/state");
 
 type PrefStore = Map<string, unknown>;
 
-const PREF_PREFIX = "extensions.zotero.aidea";
+const PREF_PREFIX = "extensions.zotero.paperassistant";
 
 let chatModule: ChatModule;
 let stateModule: StateModule;

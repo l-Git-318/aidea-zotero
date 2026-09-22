@@ -7,7 +7,7 @@ import {
 describe("Literature Notes", function () {
   it("extracts a section without consuming its closing div", function () {
     const html = [
-      '<h1>AIdea Literature Note</h1><div data-aidea-literature-note="1">',
+      '<h1>Paper Assistant Literature Note</h1><div data-aidea-literature-note="1">',
       '<h2 data-aidea-literature-section="question">Question</h2>',
       '<div data-aidea-literature-body="question"><p>Question</p><div><p>Nested evidence</p></div></div>',
       '<h2 data-aidea-literature-section="system">System</h2>',

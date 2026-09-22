@@ -61,7 +61,7 @@ export function mountLiteratureNotesPanel(
   notesRoot.id = "aidea-literature-notes";
   notesRoot.className = "aidea-literature-notes";
   notesRoot.hidden = true;
-  notesRoot.setAttribute("aria-label", "AIdea Literature Note");
+  notesRoot.setAttribute("aria-label", "Paper Assistant Literature Note");
   const status = doc.createElement("div");
   status.className = "aidea-literature-status";
   status.textContent = "Loading…";
@@ -135,7 +135,7 @@ export function mountLiteratureNotesPanel(
       const note = await loadLiteratureNote(item);
       notesRoot.textContent = "";
       const title = doc.createElement("h2");
-      title.textContent = "AIdea Literature Note";
+      title.textContent = "Paper Assistant Literature Note";
       const metadata = doc.createElement("dl");
       metadata.className = "aidea-literature-metadata";
       for (const [label, value] of Object.entries(note.metadata)) {

@@ -5,6 +5,7 @@ import {
 } from "./processRunner";
 import { fetchWithTransientRetry } from "./transientRetry";
 import { recordOAuthEnvUpdateSuccess } from "./oauthEnvUpdateState";
+import { config } from "../../package.json";
 import {
   DEFAULT_PANEL_LANG,
   detectPanelLangFromLocale,
@@ -133,7 +134,7 @@ const COPILOT_DEVICE_LOGIN_COPY: Record<OAuthUiLang, CopilotDeviceLoginCopy> = {
 function getUiLang(): OAuthUiLang {
   try {
     const saved = String(
-      Zotero.Prefs.get("extensions.zotero.aidea.uiLanguage", true) || "",
+      Zotero.Prefs.get(`${config.prefsPrefix}.uiLanguage`, true) || "",
     ).trim();
     const savedLang = normalizeUiLanguageCode(saved);
     if (savedLang) return savedLang;
@@ -541,9 +542,9 @@ export type ProxySyncDecision =
   | "skip-user-managed"
   | "skip-non-manual";
 
-const PROXY_AUTO_APPLIED_PREF = "extensions.zotero.aidea.proxy.autoApplied";
-const PROXY_LAST_SIGNATURE_PREF = "extensions.zotero.aidea.proxy.lastSignature";
-const PROXY_LAST_MODE_PREF = "extensions.zotero.aidea.proxy.lastMode";
+const PROXY_AUTO_APPLIED_PREF = `${config.prefsPrefix}.proxy.autoApplied`;
+const PROXY_LAST_SIGNATURE_PREF = `${config.prefsPrefix}.proxy.lastSignature`;
+const PROXY_LAST_MODE_PREF = `${config.prefsPrefix}.proxy.lastMode`;
 
 function hasUsableSystemProxy(proxy: SystemProxyConfig): boolean {
   return Boolean(
@@ -2317,7 +2318,7 @@ export async function readGeminiOAuthCredential(): Promise<OAuthCredential | nul
 }
 
 // ---------- Zotero Prefs helpers for plugin-native OAuth ----------
-const OAUTH_PREF_PREFIX = "extensions.zotero.aidea.";
+const OAUTH_PREF_PREFIX = `${config.prefsPrefix}.`;
 function getOAuthPref(key: string): string {
   try {
     const val = Zotero.Prefs.get(`${OAUTH_PREF_PREFIX}${key}`, true);
