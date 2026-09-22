@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Paper Assistant",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Paper Assistant: AI literature assistant for Zotero",
   "homepage_url": "https://github.com/l-Git-318/aidea-zotero#readme",
   "author": "l-Git-318",

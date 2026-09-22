@@ -16,6 +16,12 @@ import { getPanelLang, type PanelLang } from "./i18n";
 
 function resolveParentItemForNote(item: Zotero.Item): Zotero.Item | null {
   if (item.isAttachment() && item.parentID) {
+    const attachedParent =
+      (item as unknown as { parentItem?: Zotero.Item }).parentItem ||
+      (
+        item as unknown as { getParentItem?: () => Zotero.Item | false }
+      ).getParentItem?.();
+    if (attachedParent && attachedParent.isRegularItem()) return attachedParent;
     const parent = getZoteroItem(item.parentID);
     if (parent && parent.isRegularItem()) return parent;
     return null;
@@ -530,6 +536,7 @@ export async function createStandaloneNoteFromChatHistory(
 // ---------------------------------------------------------------------------
 
 export const LITERATURE_NOTE_MARKER = "Paper Assistant Literature Note";
+const LEGACY_LITERATURE_NOTE_MARKERS = ["AIdea Literature Note"];
 
 const literatureNoteCreationByParent = new Map<
   string,
@@ -703,7 +710,10 @@ function parseLiteratureNote(
 function isLiteratureNote(note: Zotero.Item | null): boolean {
   if (!note || !note.isNote?.()) return false;
   try {
-    return String(note.getNote?.() || "").includes(LITERATURE_NOTE_MARKER);
+    const html = String(note.getNote?.() || "");
+    return [LITERATURE_NOTE_MARKER, ...LEGACY_LITERATURE_NOTE_MARKERS].some(
+      (marker) => html.includes(marker),
+    );
   } catch {
     return false;
   }

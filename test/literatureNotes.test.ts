@@ -2,6 +2,7 @@ import { assert } from "chai";
 import {
   createLiteratureNote,
   extractLiteratureNoteSectionHtml,
+  resolveLiteratureNoteParent,
 } from "../src/modules/contextPanel/notes";
 
 describe("Literature Notes", function () {
@@ -75,6 +76,65 @@ describe("Literature Notes", function () {
       ]);
       assert.strictEqual(first.item, second.item);
       assert.equal(created, 1);
+    } finally {
+      (globalThis as any).Zotero = originalZotero;
+      (globalThis as any).ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("uses the attachment's loaded parent before falling back to an item lookup", function () {
+    const parent = {
+      id: 9,
+      isRegularItem: () => true,
+    };
+    const attachment = {
+      parentID: 9,
+      parentItem: parent,
+      isAttachment: () => true,
+      isRegularItem: () => false,
+    };
+    assert.strictEqual(
+      resolveLiteratureNoteParent(attachment as Zotero.Item),
+      parent,
+    );
+  });
+
+  it("reuses a legacy AIdea literature note instead of creating a duplicate", async function () {
+    const originalZotero = (globalThis as any).Zotero;
+    const originalZtoolkit = (globalThis as any).ztoolkit;
+    let created = 0;
+    const legacyNote = {
+      id: 101,
+      parentID: 9,
+      isNote: () => true,
+      getNote: () => "<h1>AIdea Literature Note</h1>",
+    };
+    const parent = {
+      id: 9,
+      libraryID: 1,
+      isRegularItem: () => true,
+      isAttachment: () => false,
+      getNotes: async () => [101],
+      getCreators: () => [],
+      getField: () => "",
+    };
+    class Note {
+      constructor(_type: string) {
+        created += 1;
+      }
+    }
+    (globalThis as any).ztoolkit = { log: () => undefined };
+    (globalThis as any).Zotero = {
+      Item: Note,
+      Items: {
+        get: (id: number) => (id === legacyNote.id ? legacyNote : false),
+        getAll: async () => [legacyNote],
+      },
+    };
+    try {
+      const note = await createLiteratureNote(parent as Zotero.Item);
+      assert.strictEqual(note.item, legacyNote);
+      assert.equal(created, 0);
     } finally {
       (globalThis as any).Zotero = originalZotero;
       (globalThis as any).ztoolkit = originalZtoolkit;

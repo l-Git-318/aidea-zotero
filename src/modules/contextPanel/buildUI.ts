@@ -15,10 +15,11 @@ import { applyCurrentThemeToRoot } from "./theme";
 type PanelTab = "discussion" | "translate" | "setting";
 
 const PANEL_TABS: PanelTab[] = ["discussion", "translate", "setting"];
+const PANEL_ICON_URL = `chrome://${config.addonRef}/content/icons/icon-96.png`;
 const TAB_ICON_MAP: Record<PanelTab, string> = {
-  discussion: "chrome://aidea/content/icons/logo-talk.png",
-  translate: "chrome://aidea/content/icons/logo-translate.png",
-  setting: "chrome://aidea/content/icons/logo-setting.png",
+  discussion: PANEL_ICON_URL,
+  translate: PANEL_ICON_URL,
+  setting: PANEL_ICON_URL,
 };
 
 function isPanelTab(value: unknown): value is PanelTab {
@@ -216,7 +217,7 @@ function buildUI(body: Element, item?: Zotero.Item | null) {
   const headerTop = createElement(doc, "div", "llm-header-top");
   const headerInfo = createElement(doc, "div", "llm-header-info");
   const headerIcon = createElement(doc, "img", "llm-header-icon", {
-    alt: "AIdea",
+    alt: "Paper Assistant",
     src: TAB_ICON_MAP[initialActiveTab],
   }) as HTMLImageElement;
   headerIcon.style.width = "28px";
