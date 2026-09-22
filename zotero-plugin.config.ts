@@ -9,8 +9,8 @@ export default defineConfig({
   namespace: pkg.config.addonRef,
   xpiName: `${pkg.config.addonName}-${pkg.version}`,
   build: {
-    // Keep the source manifest unchanged so no update_url is injected by the
-    // scaffold's default manifest generator.
+    // Keep the source manifest unchanged so the installer-required no-update
+    // manifest URL is not replaced by the scaffold's GitHub release URL.
     makeManifest: {
       enable: false,
     },
