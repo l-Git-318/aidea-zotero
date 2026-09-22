@@ -99,6 +99,62 @@ describe("Literature Notes", function () {
     );
   });
 
+  it("creates and reuses a standalone note for an unparented PDF attachment", async function () {
+    const originalZotero = (globalThis as any).Zotero;
+    const originalZtoolkit = (globalThis as any).ztoolkit;
+    const saved: any[] = [];
+    const attachment = {
+      id: 25,
+      libraryID: 1,
+      parentID: false,
+      isAttachment: () => true,
+      isRegularItem: () => false,
+      getCreators: () => [],
+      getField: (field: string) => (field === "title" ? "Standalone PDF" : ""),
+    };
+    class Note {
+      id = 0;
+      libraryID = 0;
+      parentID: number | undefined;
+      private html = "";
+      isNote() {
+        return true;
+      }
+      getNote() {
+        return this.html;
+      }
+      setNote(value: string) {
+        this.html = value;
+      }
+      async saveTx() {
+        this.id = this.id || 200 + saved.length;
+        if (!saved.includes(this)) saved.push(this);
+        return this.id;
+      }
+    }
+    (globalThis as any).ztoolkit = { log: () => undefined };
+    (globalThis as any).Zotero = {
+      Item: Note,
+      Items: {
+        get: (id: number) => saved.find((note) => note.id === id) || false,
+        getAll: async () => saved,
+      },
+    };
+    try {
+      const first = await createLiteratureNote(attachment as Zotero.Item);
+      const second = await createLiteratureNote(attachment as Zotero.Item);
+      assert.strictEqual(first.item, second.item);
+      assert.isUndefined((first.item as any).parentID);
+      assert.include(
+        first.item.getNote(),
+        'data-paper-assistant-source-item="1:25"',
+      );
+    } finally {
+      (globalThis as any).Zotero = originalZotero;
+      (globalThis as any).ztoolkit = originalZtoolkit;
+    }
+  });
+
   it("reuses a legacy AIdea literature note instead of creating a duplicate", async function () {
     const originalZotero = (globalThis as any).Zotero;
     const originalZtoolkit = (globalThis as any).ztoolkit;

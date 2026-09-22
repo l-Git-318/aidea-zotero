@@ -566,6 +566,7 @@ export type LiteratureNoteMetadata = {
 
 export type LiteratureNote = {
   item: Zotero.Item;
+  /** The regular parent item, or a standalone PDF attachment when needed. */
   parentItem: Zotero.Item;
   metadata: LiteratureNoteMetadata;
   sections: Record<LiteratureNoteSection, string>;
@@ -633,9 +634,29 @@ function emptyLiteratureSections(): Record<LiteratureNoteSection, string> {
   ) as Record<LiteratureNoteSection, string>;
 }
 
+function getLiteratureNoteOwner(item: Zotero.Item): Zotero.Item | null {
+  const parentItem = resolveParentItemForNote(item);
+  if (parentItem) return parentItem;
+  // A PDF can be added to Zotero without first creating a bibliographic
+  // parent. Notes cannot be children of those standalone attachments, but the
+  // attachment still has a stable library/id pair that we can use to retain a
+  // single standalone Literature Note.
+  if (item.isAttachment?.() && item.id && item.libraryID) return item;
+  return null;
+}
+
+function getLiteratureNoteSourceKey(item: Zotero.Item): string | null {
+  const libraryID = Number(item.libraryID);
+  const itemID = Number(item.id);
+  if (!Number.isFinite(libraryID) || !Number.isFinite(itemID)) return null;
+  if (libraryID <= 0 || itemID <= 0) return null;
+  return `${Math.floor(libraryID)}:${Math.floor(itemID)}`;
+}
+
 function renderLiteratureNoteHtml(
   metadata: LiteratureNoteMetadata,
   sections: Record<LiteratureNoteSection, string>,
+  sourceKey: string | null = null,
 ): string {
   const metaRows = [
     ["Title", metadata.title],
@@ -653,7 +674,10 @@ function renderLiteratureNoteHtml(
     const body = sections[section] || "";
     return `<h2 data-aidea-literature-section="${section}">${LITERATURE_SECTION_LABELS[section]}</h2><div data-aidea-literature-body="${section}">${body}</div>`;
   }).join("");
-  return `<h1>${LITERATURE_NOTE_MARKER}</h1><div data-aidea-literature-note="1"><h2>Metadata</h2><div data-aidea-literature-metadata="1">${metaRows}</div>${bodies}</div>`;
+  const sourceAttribute = sourceKey
+    ? ` data-paper-assistant-source-item="${sourceKey}"`
+    : "";
+  return `<h1>${LITERATURE_NOTE_MARKER}</h1><div data-aidea-literature-note="1"${sourceAttribute}><h2>Metadata</h2><div data-aidea-literature-metadata="1">${metaRows}</div>${bodies}</div>`;
 }
 
 function extractLiteratureSection(
@@ -719,35 +743,63 @@ function isLiteratureNote(note: Zotero.Item | null): boolean {
   }
 }
 
-/** Locate the one canonical Literature Note for a regular item or attachment. */
+function belongsToStandaloneLiteratureSource(
+  note: Zotero.Item | null,
+  sourceKey: string | null,
+): boolean {
+  if (!sourceKey || !isLiteratureNote(note)) return false;
+  try {
+    return String(note!.getNote?.() || "").includes(
+      `data-paper-assistant-source-item="${sourceKey}"`,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Locate the canonical Literature Note for a bibliographic item or PDF. */
 export async function findLiteratureNote(
   item: Zotero.Item,
 ): Promise<LiteratureNote | null> {
   const parentItem = resolveLiteratureNoteParent(item);
-  if (!parentItem) return null;
+  const ownerItem = getLiteratureNoteOwner(item);
+  if (!ownerItem) return null;
+  const sourceKey = getLiteratureNoteSourceKey(ownerItem);
   const ids = new Set<number>();
-  try {
-    for (const rawId of (await (parentItem as any).getNotes?.()) || []) {
-      const id = Number(rawId);
-      if (Number.isFinite(id) && id > 0) ids.add(Math.floor(id));
+  if (parentItem) {
+    try {
+      for (const rawId of (await (parentItem as any).getNotes?.()) || []) {
+        const id = Number(rawId);
+        if (Number.isFinite(id) && id > 0) ids.add(Math.floor(id));
+      }
+    } catch {
+      // The library scan below is retained for older Zotero APIs.
     }
-  } catch {
-    // A library scan below is retained for older Zotero APIs.
   }
   for (const id of ids) {
     const note = getZoteroItem(id);
-    if (isLiteratureNote(note)) return parseLiteratureNote(note!, parentItem);
+    if (isLiteratureNote(note)) return parseLiteratureNote(note!, ownerItem);
   }
   try {
     const candidates = await Zotero.Items.getAll(
-      parentItem.libraryID,
+      ownerItem.libraryID,
       true,
       false,
       false,
     );
     for (const candidate of candidates) {
-      if (candidate.parentID === parentItem.id && isLiteratureNote(candidate)) {
-        return parseLiteratureNote(candidate, parentItem);
+      if (
+        parentItem &&
+        candidate.parentID === parentItem.id &&
+        isLiteratureNote(candidate)
+      ) {
+        return parseLiteratureNote(candidate, ownerItem);
+      }
+      if (
+        !parentItem &&
+        belongsToStandaloneLiteratureSource(candidate, sourceKey)
+      ) {
+        return parseLiteratureNote(candidate, ownerItem);
       }
     }
   } catch (err) {
@@ -760,27 +812,31 @@ export async function createLiteratureNote(
   item: Zotero.Item,
 ): Promise<LiteratureNote> {
   const parentItem = resolveLiteratureNoteParent(item);
-  if (!parentItem)
-    throw new Error("Literature Note requires a regular parent item");
-  const key = `${parentItem.libraryID}:${parentItem.id}`;
+  const ownerItem = getLiteratureNoteOwner(item);
+  if (!ownerItem)
+    throw new Error(
+      "Literature Note requires a literature item or PDF attachment",
+    );
+  const key = getLiteratureNoteSourceKey(ownerItem);
+  if (!key) throw new Error("Literature Note source item is not saved yet");
   const active = literatureNoteCreationByParent.get(key);
   if (active) return active;
   const creation = (async () => {
     // Recheck *inside* the per-parent critical section. Reader selection and
     // the Notes view can request a note concurrently.
-    const existing = await findLiteratureNote(parentItem);
+    const existing = await findLiteratureNote(item);
     if (existing) return existing;
     const note = new Zotero.Item("note");
-    note.libraryID = parentItem.libraryID;
-    note.parentID = parentItem.id;
-    const metadata = getLiteratureNoteMetadata(parentItem);
+    note.libraryID = ownerItem.libraryID;
+    if (parentItem) note.parentID = parentItem.id;
+    const metadata = getLiteratureNoteMetadata(ownerItem);
     const sections = emptyLiteratureSections();
-    note.setNote(renderLiteratureNoteHtml(metadata, sections));
+    note.setNote(renderLiteratureNoteHtml(metadata, sections, key));
     await note.saveTx();
     ztoolkit.log(
-      `AIdea: created Literature Note ${note.id} for parent ${parentItem.id}`,
+      `Paper Assistant: created Literature Note ${note.id} for source ${key}`,
     );
-    return { item: note, parentItem, metadata, sections };
+    return { item: note, parentItem: ownerItem, metadata, sections };
   })();
   literatureNoteCreationByParent.set(key, creation);
   try {
@@ -808,7 +864,13 @@ export async function updateLiteratureNote(
     if (updates[section] !== undefined)
       sections[section] = String(updates[section] || "");
   }
-  current.item.setNote(renderLiteratureNoteHtml(current.metadata, sections));
+  current.item.setNote(
+    renderLiteratureNoteHtml(
+      current.metadata,
+      sections,
+      getLiteratureNoteSourceKey(current.parentItem),
+    ),
+  );
   await current.item.saveTx();
   ztoolkit.log(`AIdea: saved Literature Note ${current.item.id}`);
   return { ...current, sections };

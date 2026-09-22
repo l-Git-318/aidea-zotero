@@ -1,7 +1,7 @@
 {
   "name": "paper-assistant-for-zotero",
   "type": "module",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Paper Assistant: AI literature assistant for Zotero",
   "config": {
     "addonName": "Paper Assistant",
