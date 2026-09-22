@@ -564,12 +564,21 @@ export type LiteratureNoteMetadata = {
   doi: string;
 };
 
+export type LiteratureNoteDiscussion = {
+  id: string;
+  section: LiteratureNoteSection;
+  question: string;
+  response: string;
+  createdAt: string;
+};
+
 export type LiteratureNote = {
   item: Zotero.Item;
   /** The regular parent item, or a standalone PDF attachment when needed. */
   parentItem: Zotero.Item;
   metadata: LiteratureNoteMetadata;
   sections: Record<LiteratureNoteSection, string>;
+  discussions: LiteratureNoteDiscussion[];
 };
 
 const LITERATURE_SECTION_LABELS: Record<LiteratureNoteSection, string> = {
@@ -653,10 +662,51 @@ function getLiteratureNoteSourceKey(item: Zotero.Item): string | null {
   return `${Math.floor(libraryID)}:${Math.floor(itemID)}`;
 }
 
+function normalizeLiteratureNoteDiscussions(
+  value: unknown,
+): LiteratureNoteDiscussion[] {
+  if (!Array.isArray(value)) return [];
+  const knownSections = new Set<string>(LITERATURE_NOTE_SECTIONS);
+  return value
+    .filter((entry): entry is Record<string, unknown> => !!entry)
+    .map((entry) => ({
+      id: String(entry.id || ""),
+      section: String(entry.section || "") as LiteratureNoteSection,
+      question: String(entry.question || "").trim(),
+      response: String(entry.response || "").trim(),
+      createdAt: String(entry.createdAt || ""),
+    }))
+    .filter(
+      (entry) =>
+        !!entry.id &&
+        knownSections.has(entry.section) &&
+        !!entry.question &&
+        !!entry.response,
+    )
+    .slice(-12);
+}
+
+function extractLiteratureNoteDiscussions(
+  html: string,
+): LiteratureNoteDiscussion[] {
+  const match = /data-paper-assistant-discussions=["']([^"']*)["']/i.exec(
+    String(html || ""),
+  );
+  if (!match?.[1]) return [];
+  try {
+    return normalizeLiteratureNoteDiscussions(
+      JSON.parse(decodeURIComponent(match[1])),
+    );
+  } catch {
+    return [];
+  }
+}
+
 function renderLiteratureNoteHtml(
   metadata: LiteratureNoteMetadata,
   sections: Record<LiteratureNoteSection, string>,
   sourceKey: string | null = null,
+  discussions: LiteratureNoteDiscussion[] = [],
 ): string {
   const metaRows = [
     ["Title", metadata.title],
@@ -677,7 +727,10 @@ function renderLiteratureNoteHtml(
   const sourceAttribute = sourceKey
     ? ` data-paper-assistant-source-item="${sourceKey}"`
     : "";
-  return `<h1>${LITERATURE_NOTE_MARKER}</h1><div data-aidea-literature-note="1"${sourceAttribute}><h2>Metadata</h2><div data-aidea-literature-metadata="1">${metaRows}</div>${bodies}</div>`;
+  const discussionPayload = encodeURIComponent(
+    JSON.stringify(normalizeLiteratureNoteDiscussions(discussions)),
+  );
+  return `<h1>${LITERATURE_NOTE_MARKER}</h1><div data-aidea-literature-note="1"${sourceAttribute}><h2>Metadata</h2><div data-aidea-literature-metadata="1">${metaRows}</div>${bodies}<div data-paper-assistant-discussions="${discussionPayload}" hidden="hidden"></div></div>`;
 }
 
 function extractLiteratureSection(
@@ -728,6 +781,7 @@ function parseLiteratureNote(
     parentItem,
     metadata: getLiteratureNoteMetadata(parentItem),
     sections,
+    discussions: extractLiteratureNoteDiscussions(html),
   };
 }
 
@@ -836,7 +890,13 @@ export async function createLiteratureNote(
     ztoolkit.log(
       `Paper Assistant: created Literature Note ${note.id} for source ${key}`,
     );
-    return { item: note, parentItem: ownerItem, metadata, sections };
+    return {
+      item: note,
+      parentItem: ownerItem,
+      metadata,
+      sections,
+      discussions: [],
+    };
   })();
   literatureNoteCreationByParent.set(key, creation);
   try {
@@ -869,11 +929,36 @@ export async function updateLiteratureNote(
       current.metadata,
       sections,
       getLiteratureNoteSourceKey(current.parentItem),
+      current.discussions,
     ),
   );
   await current.item.saveTx();
   ztoolkit.log(`AIdea: saved Literature Note ${current.item.id}`);
   return { ...current, sections };
+}
+
+export async function saveLiteratureNoteDiscussion(
+  item: Zotero.Item,
+  discussion: LiteratureNoteDiscussion,
+): Promise<LiteratureNote> {
+  const current = await loadLiteratureNote(item);
+  const discussions = normalizeLiteratureNoteDiscussions([
+    ...current.discussions.filter((entry) => entry.id !== discussion.id),
+    discussion,
+  ]);
+  current.item.setNote(
+    renderLiteratureNoteHtml(
+      current.metadata,
+      current.sections,
+      getLiteratureNoteSourceKey(current.parentItem),
+      discussions,
+    ),
+  );
+  await current.item.saveTx();
+  ztoolkit.log(
+    `Paper Assistant: saved Literature Note discussion ${discussion.id}`,
+  );
+  return { ...current, discussions };
 }
 
 export async function appendToLiteratureNoteSection(

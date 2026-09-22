@@ -3,10 +3,13 @@ import { config } from "../../../package.json";
 import {
   LITERATURE_NOTE_SECTIONS,
   loadLiteratureNote,
+  saveLiteratureNoteDiscussion,
   updateLiteratureNote,
+  type LiteratureNoteDiscussion,
   type LiteratureNoteSection,
 } from "./notes";
 import {
+  discussLiteratureNoteSection,
   generateLiteratureNoteSection,
   getAutoFillableLiteratureNoteSections,
 } from "./literatureNoteAI";
@@ -27,6 +30,17 @@ type NoteCopy = {
   fill: string;
   fillFailed: string;
   filling: string;
+  discuss: string;
+  discussion: (label: string) => string;
+  discussionHint: string;
+  ask: string;
+  asking: string;
+  questionPlaceholder: (label: string) => string;
+  noDiscussion: string;
+  appendAnswer: string;
+  replaceSection: string;
+  close: string;
+  discussionFailed: string;
   write: (label: string) => string;
   loadFailed: string;
   retry: string;
@@ -72,6 +86,18 @@ function getCopy(): NoteCopy {
       fill: "AI 填充",
       fillFailed: "填充失败",
       filling: "正在生成",
+      discuss: "讨论",
+      discussion: (label) => `讨论：${label}`,
+      discussionHint:
+        "AI 将结合当前栏目和论文原文回答；只有你点击操作时才会写回笔记。",
+      ask: "发送问题",
+      asking: "正在思考…",
+      questionPlaceholder: (label) => `围绕“${label}”继续提问…`,
+      noDiscussion: "还没有讨论记录。",
+      appendAnswer: "追加到本节",
+      replaceSection: "替换本节",
+      close: "关闭",
+      discussionFailed: "讨论失败",
       write: (label) => `填写${label}…`,
       loadFailed: "无法打开文献笔记",
       retry: "重试",
@@ -93,6 +119,18 @@ function getCopy(): NoteCopy {
     fill: "AI fill",
     fillFailed: "AI fill failed",
     filling: "AI is drafting",
+    discuss: "Discuss",
+    discussion: (label) => `Discuss: ${label}`,
+    discussionHint:
+      "AI uses this section and paper excerpts. It only changes the note if you choose an action below an answer.",
+    ask: "Ask",
+    asking: "Thinking…",
+    questionPlaceholder: (label) => `Ask about ${label}…`,
+    noDiscussion: "No discussion yet.",
+    appendAnswer: "Append to section",
+    replaceSection: "Replace section",
+    close: "Close",
+    discussionFailed: "Discussion failed",
     write: (label) => `Write ${label}…`,
     loadFailed: "Couldn’t open the research note",
     retry: "Retry",
@@ -149,6 +187,12 @@ export function mountLiteratureNotesPanel(
     ? "zh-CN"
     : "en";
   let status: HTMLElement | null = null;
+  let discussions: LiteratureNoteDiscussion[] = [];
+  let activeDiscussionSection: LiteratureNoteSection | null = null;
+  let discussionDrawer: HTMLElement | null = null;
+  let discussionHistory: HTMLElement | null = null;
+  let discussionPrompt: HTMLTextAreaElement | null = null;
+  let discussionTitle: HTMLElement | null = null;
 
   const setStatus = (text: string, tone: "saved" | "pending" | "error") => {
     if (!status) return;
@@ -204,6 +248,164 @@ export function mountLiteratureNotesPanel(
     }
   };
 
+  const applyDiscussionAnswer = async (
+    section: LiteratureNoteSection,
+    response: string,
+    mode: "append" | "replace",
+  ) => {
+    const textarea = fields.get(section);
+    if (!textarea) return;
+    const next =
+      mode === "replace" || !textarea.value.trim()
+        ? response
+        : `${textarea.value.trim()}\n\n${response}`;
+    textarea.value = next;
+    scheduleSave(section, next);
+    await flush();
+  };
+
+  const renderDiscussionHistory = () => {
+    if (!discussionHistory || !activeDiscussionSection) return;
+    const entries = discussions
+      .filter((entry) => entry.section === activeDiscussionSection)
+      .slice(-8);
+    discussionHistory.replaceChildren();
+    if (!entries.length) {
+      const empty = doc.createElement("p");
+      empty.className = "paperassistant-discussion-empty";
+      empty.textContent = copy.noDiscussion;
+      discussionHistory.appendChild(empty);
+      return;
+    }
+    for (const entry of entries) {
+      const question = doc.createElement("div");
+      question.className = "paperassistant-discussion-message question";
+      question.textContent = entry.question;
+      const answer = doc.createElement("div");
+      answer.className = "paperassistant-discussion-message answer";
+      const response = doc.createElement("p");
+      response.textContent = entry.response;
+      const actions = doc.createElement("div");
+      actions.className = "paperassistant-discussion-actions";
+      const append = doc.createElement("button");
+      append.type = "button";
+      append.className = "paperassistant-note-button";
+      append.textContent = copy.appendAnswer;
+      append.addEventListener(
+        "click",
+        () =>
+          void applyDiscussionAnswer(entry.section, entry.response, "append"),
+      );
+      const replace = doc.createElement("button");
+      replace.type = "button";
+      replace.className = "paperassistant-note-button";
+      replace.textContent = copy.replaceSection;
+      replace.addEventListener(
+        "click",
+        () =>
+          void applyDiscussionAnswer(entry.section, entry.response, "replace"),
+      );
+      actions.append(append, replace);
+      answer.append(response, actions);
+      discussionHistory.append(question, answer);
+    }
+  };
+
+  const openDiscussion = (section: LiteratureNoteSection) => {
+    activeDiscussionSection = section;
+    if (discussionTitle)
+      discussionTitle.textContent = copy.discussion(copy.labels[section]);
+    if (discussionPrompt) {
+      discussionPrompt.placeholder = copy.questionPlaceholder(
+        copy.labels[section],
+      );
+      discussionPrompt.value = "";
+    }
+    if (discussionDrawer) discussionDrawer.hidden = false;
+    renderDiscussionHistory();
+    discussionPrompt?.focus();
+  };
+
+  const submitDiscussion = async () => {
+    const section = activeDiscussionSection;
+    const prompt = discussionPrompt?.value.trim() || "";
+    if (!section || !prompt || !discussionPrompt) return;
+    const askButton = discussionDrawer?.querySelector(
+      ".paperassistant-discussion-ask",
+    ) as HTMLButtonElement | null;
+    if (askButton) askButton.disabled = true;
+    setStatus(`${copy.asking} ${copy.labels[section]}…`, "pending");
+    try {
+      await flush();
+      const response = await discussLiteratureNoteSection({
+        item,
+        section,
+        noteText: fields.get(section)?.value || "",
+        question: prompt,
+        language: aiLanguage,
+      });
+      const saved = await saveLiteratureNoteDiscussion(item, {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        section,
+        question: prompt,
+        response: response.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      discussions = saved.discussions;
+      discussionPrompt.value = "";
+      renderDiscussionHistory();
+      setStatus(copy.saved, "saved");
+    } catch (error) {
+      setStatus(`${copy.discussionFailed}: ${copy.labels[section]}`, "error");
+      ztoolkit.log("Paper Assistant: Literature Note discussion failed", error);
+    } finally {
+      if (askButton) askButton.disabled = false;
+    }
+  };
+
+  const createDiscussionDrawer = () => {
+    const drawer = doc.createElement("aside");
+    drawer.className = "paperassistant-discussion-drawer";
+    drawer.hidden = true;
+    const header = doc.createElement("header");
+    const title = doc.createElement("strong");
+    const hint = doc.createElement("p");
+    hint.textContent = copy.discussionHint;
+    const close = doc.createElement("button");
+    close.type = "button";
+    close.className = "paperassistant-note-button";
+    close.textContent = copy.close;
+    close.addEventListener("click", () => {
+      drawer.hidden = true;
+    });
+    header.append(title, close);
+    const history = doc.createElement("div");
+    history.className = "paperassistant-discussion-history";
+    const composer = doc.createElement("div");
+    composer.className = "paperassistant-discussion-composer";
+    const prompt = doc.createElement("textarea");
+    prompt.rows = 3;
+    prompt.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        void submitDiscussion();
+      }
+    });
+    const ask = doc.createElement("button");
+    ask.type = "button";
+    ask.className =
+      "paperassistant-note-button primary paperassistant-discussion-ask";
+    ask.textContent = copy.ask;
+    ask.addEventListener("click", () => void submitDiscussion());
+    composer.append(prompt, ask);
+    drawer.append(header, hint, history, composer);
+    discussionDrawer = drawer;
+    discussionHistory = history;
+    discussionPrompt = prompt;
+    discussionTitle = title;
+    return drawer;
+  };
+
   const renderLoadFailure = (error: unknown) => {
     const card = doc.createElement("div");
     card.className = "paperassistant-note-error";
@@ -229,6 +431,8 @@ export function mountLiteratureNotesPanel(
     try {
       const note = await loadLiteratureNote(item);
       fields.clear();
+      discussions = note.discussions;
+      activeDiscussionSection = null;
       const header = doc.createElement("header");
       header.className = "paperassistant-note-header";
       const brand = doc.createElement("div");
@@ -323,19 +527,34 @@ export function mountLiteratureNotesPanel(
         );
         fields.set(section, textarea);
         headingRow.appendChild(heading);
+        const actions = doc.createElement("div");
+        actions.className = "paperassistant-note-section-actions";
+        const discussButton = doc.createElement("button");
+        discussButton.type = "button";
+        discussButton.className = "paperassistant-note-discuss";
+        discussButton.textContent = copy.discuss;
+        discussButton.addEventListener("click", () => openDiscussion(section));
+        actions.appendChild(discussButton);
         if (getAutoFillableLiteratureNoteSections().includes(section)) {
           const fillButton = doc.createElement("button");
           fillButton.type = "button";
           fillButton.className = "paperassistant-note-fill";
           fillButton.textContent = copy.fill;
           fillButton.addEventListener("click", () => void fillSection(section));
-          headingRow.appendChild(fillButton);
+          actions.appendChild(fillButton);
         }
+        headingRow.appendChild(actions);
         card.append(headingRow, textarea);
         grid.appendChild(card);
       }
 
-      notesRoot.replaceChildren(header, metadata, toolbar, grid);
+      notesRoot.replaceChildren(
+        header,
+        metadata,
+        toolbar,
+        grid,
+        createDiscussionDrawer(),
+      );
       notesRoot.dataset.loaded = "true";
       setStatus(copy.saved, "saved");
     } catch (error) {

@@ -76,3 +76,49 @@ export async function generateLiteratureNoteSection(params: {
       .join("\n\n"),
   });
 }
+
+/**
+ * Discuss one note section with grounded paper excerpts. The caller decides
+ * whether a response should be applied to the saved note text.
+ */
+export async function discussLiteratureNoteSection(params: {
+  item: Zotero.Item;
+  section: LiteratureNoteSection;
+  noteText: string;
+  question: string;
+  language: "zh-CN" | "en";
+}): Promise<string> {
+  const { item, section, noteText, question, language } = params;
+  const cleanQuestion = question.trim();
+  if (!cleanQuestion) throw new Error("Ask a discussion question first");
+  const document = resolveReaderDocument(item);
+  if (!document) throw new Error("No readable document context is available");
+  const context = await ensureDocumentContext(document);
+  const boundedContext = await buildReaderDocumentContext(
+    document,
+    context || undefined,
+    cleanQuestion,
+    false,
+    undefined,
+    { maxChunks: 6, maxLength: 12000 },
+  );
+  if (!boundedContext.trim()) {
+    throw new Error("No retrievable document context is available");
+  }
+  return callLLM({
+    context: boundedContext,
+    prompt: [
+      `Discuss the Literature Note section: ${sectionLabels[section]}.`,
+      language === "zh-CN"
+        ? "Reply in Simplified Chinese."
+        : "Reply in English.",
+      "Answer the user's question directly and distinguish paper-supported claims from suggestions or uncertainty.",
+      "Do not rewrite the note unless the user explicitly applies your response.",
+      "When the excerpts support it, cite page, section, figure, or result references.",
+      noteText.trim()
+        ? `Current note section:\n${noteText.trim()}`
+        : "Current note section is blank.",
+      `User question:\n${cleanQuestion}`,
+    ].join("\n\n"),
+  });
+}

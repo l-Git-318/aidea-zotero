@@ -2,7 +2,9 @@ import { assert } from "chai";
 import {
   createLiteratureNote,
   extractLiteratureNoteSectionHtml,
+  loadLiteratureNote,
   resolveLiteratureNoteParent,
+  saveLiteratureNoteDiscussion,
 } from "../src/modules/contextPanel/notes";
 
 describe("Literature Notes", function () {
@@ -76,6 +78,19 @@ describe("Literature Notes", function () {
       ]);
       assert.strictEqual(first.item, second.item);
       assert.equal(created, 1);
+      const withDiscussion = await saveLiteratureNoteDiscussion(
+        parent as Zotero.Item,
+        {
+          id: "discussion-1",
+          section: "key-findings",
+          question: "What result matters most?",
+          response: "The supported result is the strongest finding.",
+          createdAt: "2026-09-22T00:00:00.000Z",
+        },
+      );
+      const reloaded = await loadLiteratureNote(parent as Zotero.Item);
+      assert.deepEqual(withDiscussion.discussions, reloaded.discussions);
+      assert.equal(reloaded.discussions[0]?.section, "key-findings");
     } finally {
       (globalThis as any).Zotero = originalZotero;
       (globalThis as any).ztoolkit = originalZtoolkit;
