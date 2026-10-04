@@ -49,3 +49,6 @@ docs/refactor/
 
 # Local dev notes (not for GitHub)
 DEV_NOTES.md
+# Python bridge bytecode is generated locally
+__pycache__/
+*.py[cod]

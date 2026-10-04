@@ -8,18 +8,23 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GitHub_TOKEN }}
     steps:
-      - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
       - name: Run Build
         run: npm run build
       - name: Upload build result
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: build-result
           path: .scaffold/build
@@ -29,6 +34,14 @@ jobs:
     needs:
       - build
     steps:
-      - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
       - run: npm run test:unit
+      - name: Verify bridge helpers and proxy boundaries
+        run: |
+          python3 test/pdfTranslator/test_bridge.py
+          python3 test/pdfTranslator/test_proxy_security.py

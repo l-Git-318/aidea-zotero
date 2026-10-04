@@ -1,3 +1,8 @@
+import { readGeminiBundleCredentials } from "./geminiCredentials";
+import {
+  buildGeminiCallbackServerScript,
+  oauthStateMatches,
+} from "./geminiCallback";
 import {
   runShellCommand,
   currentPlatform,
@@ -3408,33 +3413,17 @@ async function extractGeminiCliCredentials(): Promise<{
       }
     }
 
-    // ── Bundled CLI fallback (v0.36.0+) ──
-    // Starting from v0.36.0 the Gemini CLI ships as a single self-contained
-    // bundle (bundle/gemini.js, ~93 MB).  The separate @google/gemini-cli-core
-    // directory no longer exists, so the file-based extraction above finds
-    // nothing.  Reading a 93 MB bundle just to regex-match two strings is
-    // impractical, so instead we verify the CLI executable is present and use
-    // the well-known OAuth credentials from the Gemini CLI source.
-    //
-    // These are public constants that Google explicitly documents as safe to
-    // embed in installed applications:
-    //   https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/code_assist/oauth2.ts
-    //   "Note: It's ok to save this in git because this is an installed
-    //    application … the client secret is obviously not treated as a secret."
-    const geminiPath =
-      (await locateExecutableViaShell("gemini")) ||
-      resolveExecutablePath("gemini");
-    if (geminiPath) {
-      ztoolkit?.log?.(
-        "AIdea: Gemini CLI found at",
-        geminiPath,
-        "— using bundled-CLI fallback credentials",
-      );
-      return {
-        clientId:
-          "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-        clientSecret: "GOCSPX-" + "4uHgMPm-1o7Sk-geV6Cu5clXFsxl",
-      };
+    // Newer CLI distributions bundle these application credentials. Read the
+    // locally installed bundle in bounded chunks instead of embedding a copy.
+    for (const root of roots) {
+      try {
+        const credentials = await readGeminiBundleCredentials(
+          joinPath(root, "@google", "gemini-cli", "bundle", "gemini.js"),
+        );
+        if (credentials) return credentials;
+      } catch {
+        /* try the next installed CLI location */
+      }
     }
   } catch (err) {
     ztoolkit?.log?.("AIdea: extractGeminiCliCredentials failed", err);
@@ -3463,7 +3452,7 @@ function generateGeminiPkce(): { verifier: string; challenge: string } {
       .replace(/=+$/, "");
     return { verifier, challenge };
   } catch {
-    return { verifier, challenge: verifier };
+    throw new Error("Cannot compute the PKCE S256 challenge");
   }
 }
 
@@ -3471,6 +3460,8 @@ async function loginGeminiInPlugin(): Promise<{
   ok: boolean;
   message: string;
 }> {
+  let serverScriptPath = "";
+  let resultFilePath = "";
   try {
     const creds = await extractGeminiCliCredentials();
     if (!creds) {
@@ -3481,6 +3472,11 @@ async function loginGeminiInPlugin(): Promise<{
       };
     }
     const { verifier, challenge } = generateGeminiPkce();
+    const stateBytes = new Uint8Array(32);
+    crypto.getRandomValues(stateBytes);
+    const expectedState = Array.from(stateBytes, (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
     const authParams = new URLSearchParams({
       client_id: creds.clientId,
       response_type: "code",
@@ -3488,7 +3484,7 @@ async function loginGeminiInPlugin(): Promise<{
       scope: GEMINI_SCOPES.join(" "),
       code_challenge: challenge,
       code_challenge_method: "S256",
-      state: verifier,
+      state: expectedState,
       access_type: "offline",
       prompt: "consent",
     });
@@ -3499,44 +3495,21 @@ async function loginGeminiInPlugin(): Promise<{
     const tempDir =
       Zotero.getTempDirectory?.()?.path || Zotero.DataDirectory?.dir || ".";
     const sep = currentPlatform() === "windows" ? "\\" : "/";
-    const serverScriptPath = `${tempDir}${sep}aidea-gemini-oauth-server-${Date.now()}.js`;
-    const resultFilePath = `${tempDir}${sep}aidea-gemini-oauth-result-${Date.now()}.json`;
+    serverScriptPath = `${tempDir}${sep}aidea-gemini-oauth-server-${expectedState}.js`;
+    resultFilePath = `${tempDir}${sep}aidea-gemini-oauth-result-${expectedState}.json`;
 
     // Write a tiny Node.js HTTP server script
-    const serverScript = `
-const http = require('http');
-const fs = require('fs');
-const url = require('url');
-const resultPath = ${JSON.stringify(resultFilePath)};
-const server = http.createServer((req, res) => {
-  const parsed = url.parse(req.url, true);
-  if (parsed.pathname === '/oauth2callback') {
-    const code = parsed.query.code || '';
-    const error = parsed.query.error || '';
-    const state = parsed.query.state || '';
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    if (code) {
-      res.end('<!doctype html><html><body><h2>Gemini OAuth Complete</h2><p>You can close this window and return to Zotero.</p></body></html>');
-    } else {
-      res.end('<h2>Auth failed: ' + (error || 'no code') + '</h2>');
-    }
-    fs.writeFileSync(resultPath, JSON.stringify({ code, error, state }));
-    server.close();
-    setTimeout(() => process.exit(0), 500);
-  } else {
-    res.writeHead(404);
-    res.end('Not found');
-  }
-});
-server.listen(8085, 'localhost', () => {});
-setTimeout(() => { server.close(); process.exit(1); }, 120000);
-`;
+    const serverScript = buildGeminiCallbackServerScript(
+      resultFilePath,
+      expectedState,
+    );
     // Write the server script to a temp file
     try {
       const scriptFile = Cc["@mozilla.org/file/local;1"].createInstance(
         Ci.nsIFile,
       );
       scriptFile.initWithPath(serverScriptPath);
+      scriptFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
       await Zotero.File.putContentsAsync(serverScriptPath, serverScript);
     } catch (err) {
       return {
@@ -3578,7 +3551,9 @@ setTimeout(() => { server.close(); process.exit(1); }, 120000);
           const result = JSON.parse(content) as {
             code?: string;
             error?: string;
+            state?: string;
           };
+          if (!oauthStateMatches(result.state, expectedState)) continue;
           if (result.error) {
             return {
               ok: false,
@@ -3680,6 +3655,17 @@ setTimeout(() => { server.close(); process.exit(1); }, 120000);
     };
   } catch (err) {
     return { ok: false, message: `Gemini OAuth failed: ${String(err)}` };
+  } finally {
+    for (const path of [serverScriptPath, resultFilePath]) {
+      if (!path) continue;
+      try {
+        const file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+        file.initWithPath(path);
+        if (file.exists()) file.remove(false);
+      } catch {
+        /* best effort after login or timeout */
+      }
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import { checkEnvironment, installEnvironment } from "./envManager";
 import { generateConfigToml, generateTaskJson } from "./configWriter";
 import { launchProcess, type RunningProcess } from "./processRunner";
 import { ProgressPoller } from "./progressPoller";
+import { clearExpiredTaskSecrets } from "./taskSecurity";
 
 declare const Services: any;
 declare const rootURI: string | undefined;
@@ -94,9 +95,24 @@ export class TranslateController {
     const rootTmpDir = PathUtils.join(tempDir, "aidea-translate");
     const jobsTmpDir = PathUtils.join(rootTmpDir, "jobs");
     const tmpDir = PathUtils.join(jobsTmpDir, jobId);
-    await IOUtils.makeDirectory(rootTmpDir, { ignoreExisting: true });
-    await IOUtils.makeDirectory(jobsTmpDir, { ignoreExisting: true });
-    await IOUtils.makeDirectory(tmpDir, { ignoreExisting: true });
+    await IOUtils.makeDirectory(rootTmpDir, {
+      ignoreExisting: true,
+      permissions: 0o700,
+    });
+    await IOUtils.makeDirectory(jobsTmpDir, {
+      ignoreExisting: true,
+      permissions: 0o700,
+    });
+    await IOUtils.makeDirectory(tmpDir, {
+      ignoreExisting: true,
+      permissions: 0o700,
+    });
+
+    for (const directory of [rootTmpDir, jobsTmpDir, tmpDir]) {
+      await IOUtils.setPermissions(directory, 0o700);
+    }
+
+    await clearExpiredTaskSecrets(jobsTmpDir);
 
     const configPath = PathUtils.join(tmpDir, "config.toml");
     const taskPath = PathUtils.join(tmpDir, "task.json");
@@ -104,160 +120,170 @@ export class TranslateController {
     const logPath = PathUtils.join(tmpDir, "bridge.log");
     const lockPath = PathUtils.join(tmpDir, "running.lock");
 
-    /* 3. Write config.toml with OAuth token */
-    const toml = generateConfigToml({
-      model: params.modelId,
-      apiKey: credentials.apiKey,
-      apiUrl: credentials.apiUrl,
-      sourceLang: params.sourceLang,
-      targetLang: params.targetLang,
-      qps: params.qps ?? 10,
-      noDual: !params.generateDual,
-      noMono: !params.generateMono,
-      disableRichTextTranslate: params.disableRichTextTranslate,
-      enhanceCompatibility: params.enhanceCompatibility,
-      translateTableText: params.translateTableText,
-      fontFamily: params.fontFamily,
-      ocr: params.ocr,
-      autoOcr: params.autoOcr,
-      saveGlossary: params.saveGlossary,
-      disableGlossary: params.disableGlossary,
-      dualMode: params.dualMode,
-      transFirst: params.transFirst,
-      skipClean: params.skipClean,
-      noWatermark: params.noWatermark,
-      enableJsonModeIfRequested:
-        credentials.oauthProxy?.provider === "openai-codex",
-      ignoreCache: credentials.oauthProxy?.provider === "openai-codex",
-    });
-    await IOUtils.writeUTF8(configPath, toml);
-
-    /* 4. Write task.json */
-    const taskJson = generateTaskJson({
-      pdf2zhBin: env.pdf2zhBin,
-      pdfPath: params.pdfPath,
-      outputDir: params.outputDir,
-      configFile: configPath,
-      progressFile: progressPath,
-      logFile: logPath,
-      modelId: params.modelId,
-      sourceLang: params.sourceLang,
-      targetLang: params.targetLang,
-      noDual: !params.generateDual,
-      noMono: !params.generateMono,
-      qps: params.qps ?? 10,
-      poolMaxWorker: params.poolMaxWorker ?? 1,
-      disableRichTextTranslate: params.disableRichTextTranslate,
-      enhanceCompatibility: params.enhanceCompatibility,
-      translateTableText: params.translateTableText,
-      fontFamily: params.fontFamily,
-      ocr: params.ocr,
-      autoOcr: params.autoOcr,
-      saveGlossary: params.saveGlossary,
-      disableGlossary: params.disableGlossary,
-      dualMode: params.dualMode,
-      transFirst: params.transFirst,
-      skipClean: params.skipClean,
-      noWatermark: params.noWatermark,
-      skipReferencesAuto: params.skipReferencesAuto,
-      keepAppendixTranslated: params.keepAppendixTranslated,
-      protectAuthorBlock: params.protectAuthorBlock,
-      oauthProxy: credentials.oauthProxy,
-    });
-    await IOUtils.writeUTF8(taskPath, taskJson);
-
-    /* 5. Clean stale progress file */
     try {
-      await IOUtils.remove(progressPath);
-    } catch {
-      /* ok */
-    }
-    await IOUtils.writeUTF8(
-      lockPath,
-      JSON.stringify(
-        {
-          jobId,
-          pdfPath: params.pdfPath,
-          outputDir: params.outputDir,
-          startedAt: Date.now(),
-        },
-        null,
-        2,
-      ),
-    );
-    this.activeLockPath = lockPath;
+      /* 3. Write config.toml with OAuth token */
+      const toml = generateConfigToml({
+        model: params.modelId,
+        apiKey: credentials.apiKey,
+        apiUrl: credentials.apiUrl,
+        sourceLang: params.sourceLang,
+        targetLang: params.targetLang,
+        qps: params.qps ?? 10,
+        noDual: !params.generateDual,
+        noMono: !params.generateMono,
+        disableRichTextTranslate: params.disableRichTextTranslate,
+        enhanceCompatibility: params.enhanceCompatibility,
+        translateTableText: params.translateTableText,
+        fontFamily: params.fontFamily,
+        ocr: params.ocr,
+        autoOcr: params.autoOcr,
+        saveGlossary: params.saveGlossary,
+        disableGlossary: params.disableGlossary,
+        dualMode: params.dualMode,
+        transFirst: params.transFirst,
+        skipClean: params.skipClean,
+        noWatermark: params.noWatermark,
+        enableJsonModeIfRequested:
+          credentials.oauthProxy?.provider === "openai-codex",
+        ignoreCache: credentials.oauthProxy?.provider === "openai-codex",
+      });
+      await IOUtils.writeUTF8(configPath, toml);
+      await IOUtils.setPermissions(configPath, 0o600);
 
-    /* 6. Find bridge script */
-    const bridgePath = this.getBridgeScriptPath(tmpDir);
-    this.callback({
-      type: "env_progress",
-      step: "bridge",
-      detail: `Bridge script: ${bridgePath}`,
-    });
-    this.callback({
-      type: "env_progress",
-      step: "workspace",
-      detail: `Task workspace: ${tmpDir}`,
-    });
+      /* 4. Write task.json */
+      const taskJson = generateTaskJson({
+        pdf2zhBin: env.pdf2zhBin,
+        pdfPath: params.pdfPath,
+        outputDir: params.outputDir,
+        configFile: configPath,
+        progressFile: progressPath,
+        logFile: logPath,
+        modelId: params.modelId,
+        sourceLang: params.sourceLang,
+        targetLang: params.targetLang,
+        noDual: !params.generateDual,
+        noMono: !params.generateMono,
+        qps: params.qps ?? 10,
+        poolMaxWorker: params.poolMaxWorker ?? 1,
+        disableRichTextTranslate: params.disableRichTextTranslate,
+        enhanceCompatibility: params.enhanceCompatibility,
+        translateTableText: params.translateTableText,
+        fontFamily: params.fontFamily,
+        ocr: params.ocr,
+        autoOcr: params.autoOcr,
+        saveGlossary: params.saveGlossary,
+        disableGlossary: params.disableGlossary,
+        dualMode: params.dualMode,
+        transFirst: params.transFirst,
+        skipClean: params.skipClean,
+        noWatermark: params.noWatermark,
+        skipReferencesAuto: params.skipReferencesAuto,
+        keepAppendixTranslated: params.keepAppendixTranslated,
+        protectAuthorBlock: params.protectAuthorBlock,
+        oauthProxy: credentials.oauthProxy,
+      });
+      await IOUtils.writeUTF8(taskPath, taskJson);
+      await IOUtils.setPermissions(taskPath, 0o600);
 
-    /* 7. Launch bridge subprocess */
-    this.setState("running");
-    try {
-      this.process = launchProcess(env.pythonBin, [bridgePath, taskPath]);
-    } catch (err) {
-      this.clearActiveLock();
-      throw err;
-    }
-
-    /* 8. Start progress poller */
-    this.poller = new ProgressPoller(progressPath, (data) => {
-      this.callback({ type: "progress", data });
-      if (data.status === "done") this.setState("done");
-      if (data.status === "error") {
-        this.setState("error");
-        const detail = (data.errorDetail || "").trim();
-        const logHint = data.logFile ? ` (log: ${data.logFile})` : "";
-        const message = detail
-          ? `${data.message}\n${detail}${logHint}`
-          : `${data.message}${logHint}`;
-        this.callback({ type: "error", message });
+      /* 5. Clean stale progress file */
+      try {
+        await IOUtils.remove(progressPath);
+      } catch {
+        /* ok */
       }
-    });
-    this.poller.start();
+      await IOUtils.writeUTF8(
+        lockPath,
+        JSON.stringify(
+          {
+            jobId,
+            pdfPath: params.pdfPath,
+            outputDir: params.outputDir,
+            startedAt: Date.now(),
+          },
+          null,
+          2,
+        ),
+      );
+      this.activeLockPath = lockPath;
 
-    /* 9. Handle process completion */
-    try {
-      const exitCode = await this.process.done;
-      // Give poller one final tick to read the "done" status from progress.json
-      if (this.poller) {
-        try {
-          await this.poller.tick();
-        } catch {
-          /* ok */
+      /* 6. Find bridge script */
+      const bridgePath = this.getBridgeScriptPath(tmpDir);
+      this.callback({
+        type: "env_progress",
+        step: "bridge",
+        detail: `Bridge script: ${bridgePath}`,
+      });
+      this.callback({
+        type: "env_progress",
+        step: "workspace",
+        detail: `Task workspace: ${tmpDir}`,
+      });
+
+      /* 7. Launch bridge subprocess */
+      this.setState("running");
+      try {
+        this.process = launchProcess(env.pythonBin, [bridgePath, taskPath]);
+      } catch (err) {
+        this.clearActiveLock();
+        throw err;
+      }
+
+      /* 8. Start progress poller */
+      this.poller = new ProgressPoller(progressPath, (data) => {
+        this.callback({ type: "progress", data });
+        if (data.status === "done") this.setState("done");
+        if (data.status === "error") {
+          this.setState("error");
+          const detail = (data.errorDetail || "").trim();
+          const logHint = data.logFile ? ` (log: ${data.logFile})` : "";
+          const message = detail
+            ? `${data.message}\n${detail}${logHint}`
+            : `${data.message}${logHint}`;
+          this.callback({ type: "error", message });
         }
-      }
-      if (exitCode === 0 && this.state === "running") {
-        // Poller didn't catch it — force done
-        this.setState("done");
-      } else if (exitCode !== 0 && this.state === "running") {
-        this.setState("error");
-        this.callback({
-          type: "error",
-          message: `Bridge process exited with code ${exitCode}`,
-        });
-      }
-    } catch (err) {
-      if (this.state === "running") {
-        this.setState("error");
-        this.callback({
-          type: "error",
-          message: err instanceof Error ? err.message : String(err),
-        });
+      });
+      this.poller.start();
+
+      /* 9. Handle process completion */
+      try {
+        const exitCode = await this.process.done;
+        // Give poller one final tick to read the "done" status from progress.json
+        if (this.poller) {
+          try {
+            await this.poller.tick();
+          } catch {
+            /* ok */
+          }
+        }
+        if (exitCode === 0 && this.state === "running") {
+          // Poller didn't catch it — force done
+          this.setState("done");
+        } else if (exitCode !== 0 && this.state === "running") {
+          this.setState("error");
+          this.callback({
+            type: "error",
+            message: `Bridge process exited with code ${exitCode}`,
+          });
+        }
+      } catch (err) {
+        if (this.state === "running") {
+          this.setState("error");
+          this.callback({
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } finally {
+        this.poller?.stop();
+        this.process = null;
+        this.clearActiveLock();
       }
     } finally {
-      this.poller?.stop();
-      this.process = null;
-      this.clearActiveLock();
+      await Promise.all(
+        [taskPath, configPath].map((path) =>
+          IOUtils.remove(path, { ignoreAbsent: true }),
+        ),
+      );
     }
   }
 

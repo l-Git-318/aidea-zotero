@@ -88,7 +88,8 @@ describe("markdown renderer", function () {
       const html = renderMarkdown(
         '![A "quote"](https://example.com/a.png "Example title")',
       );
-      assert.include(html, 'alt="A &quot;quote&quot;"');
+      assert.include(html, "A &quot;quote&quot;</a>");
+      assert.notInclude(html, "<img");
       assert.include(html, 'title="Example title"');
     });
 

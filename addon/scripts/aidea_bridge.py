@@ -12,6 +12,8 @@ import re
 import shutil
 import subprocess
 import sys
+import secrets
+import hmac
 import tempfile
 import time
 import uuid
@@ -1951,6 +1953,7 @@ class OAuthCompatProxyServer:
         self.httpd = None
         self.thread = None
         self.port = None
+        self.token = secrets.token_urlsafe(32)
         self.debug_log = debug_log
         self.debug_enabled = bool(debug_enabled)
         self._debug_lock = threading.Lock()
@@ -2066,6 +2069,10 @@ class OAuthCompatProxyServer:
         parent = self
 
         class Handler(BaseHTTPRequestHandler):
+            def setup(self):
+                super().setup()
+                self.connection.settimeout(15)
+
             def log_message(self, format_, *args):
                 return
 
@@ -2078,13 +2085,31 @@ class OAuthCompatProxyServer:
                 self.wfile.write(data)
 
             def do_POST(self):
+                if self.headers.get("Host") != f"127.0.0.1:{parent.port}" or self.headers.get("Origin") is not None:
+                    self._send_json(403, {"error": {"message": "Invalid local origin"}})
+                    return
+                if not hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {parent.token}"):
+                    self._send_json(401, {"error": {"message": "Authentication required"}})
+                    return
+                if self.headers.get_content_type() != "application/json" or self.headers.get("Transfer-Encoding"):
+                    self._send_json(415, {"error": {"message": "JSON with Content-Length required"}})
+                    return
                 if self.path.rstrip("/") != "/v1/chat/completions":
                     self._send_json(404, {"error": {"message": f"Unsupported path: {self.path}"}})
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    raw = self.rfile.read(length) if length > 0 else b"{}"
+                    if not 0 < length <= 4 * 1024 * 1024:
+                        self._send_json(413, {"error": {"message": "Invalid or oversized request"}})
+                        return
+                    raw = self.rfile.read(length)
+                    if len(raw) != length:
+                        self._send_json(400, {"error": {"message": "Incomplete request"}})
+                        return
                     payload = json.loads(raw.decode("utf-8", errors="replace"))
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": {"message": "JSON object required"}})
+                        return
                     model = str(payload.get("model", "")).strip() or "unknown-model"
                     text = parent.handle_chat_completion(payload)
                     stream = bool(payload.get("stream"))
@@ -2101,9 +2126,29 @@ class OAuthCompatProxyServer:
                         return
                     self._send_json(200, _to_openai_completion_text_response(model, text))
                 except Exception as err:
-                    self._send_json(500, {"error": {"message": str(err)}})
+                    self._send_json(500, {"error": {"message": "Proxy request failed"}})
 
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        class BoundedServer(ThreadingHTTPServer):
+            daemon_threads = True
+            slots = threading.BoundedSemaphore(8)
+
+            def process_request(self, request, client_address):
+                if not self.slots.acquire(blocking=False):
+                    self.shutdown_request(request)
+                    return
+                try:
+                    super().process_request(request, client_address)
+                except Exception:
+                    self.slots.release()
+                    raise
+
+            def process_request_thread(self, request, client_address):
+                try:
+                    super().process_request_thread(request, client_address)
+                finally:
+                    self.slots.release()
+
+        self.httpd = BoundedServer(("127.0.0.1", 0), Handler)
         self.port = int(self.httpd.server_address[1])
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
@@ -2116,6 +2161,8 @@ class OAuthCompatProxyServer:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2)
         self.thread = None
+        self.token = ""
+        self.proxy_cfg.clear()
 
     def handle_chat_completion(self, payload):
         provider = str(self.proxy_cfg.get("provider", "")).strip()
@@ -2488,7 +2535,7 @@ class OAuthCompatProxyServer:
         return text
 
 
-def _rewrite_openai_base_url(config_file, base_url):
+def _rewrite_openai_base_url(config_file, base_url, api_key=None):
     with open(config_file, "r", encoding="utf-8") as f:
         toml = f.read()
 
@@ -2500,6 +2547,12 @@ def _rewrite_openai_base_url(config_file, base_url):
     if replaced == toml:
         replaced = toml + f'\nopenai_compatible_base_url = "{base_url}"\n'
 
+    if api_key is not None:
+        key_line = "openai_compatible_api_key = " + json.dumps(api_key)
+        if re.search(r'(?m)^openai_compatible_api_key\s*=', replaced):
+            replaced = re.sub(r'(?m)^openai_compatible_api_key\s*=.*$', lambda m: key_line, replaced)
+        else:
+            replaced += "\n" + key_line + "\n"
     with open(config_file, "w", encoding="utf-8") as f:
         f.write(replaced)
 
@@ -2512,6 +2565,8 @@ def main():
     task_file = sys.argv[1]
     with open(task_file, "r", encoding="utf-8") as f:
         task = json.load(f)
+    # Loaded once into memory; credentials must not remain in the job descriptor.
+    os.remove(task_file)
 
     progress_file = task["progressFile"]
     pdf2zh_bin = task["pdf2zhBin"]
@@ -2575,7 +2630,7 @@ def main():
                 debug_enabled=oauth_proxy_debug,
             )
             proxy.start()
-            _rewrite_openai_base_url(config_file, proxy.base_url)
+            _rewrite_openai_base_url(config_file, proxy.base_url, proxy.token)
             log_line(f"OAuth proxy started: {oauth_proxy_cfg.get('provider')} @ {proxy.base_url}")
 
         if protect_author_block:
@@ -2929,6 +2984,10 @@ def main():
         ))
         raise
     finally:
+        try:
+            os.remove(config_file)
+        except OSError:
+            log_line("Could not remove the temporary model config; clear the private job cache.")
         if proxy:
             proxy.stop()
         if patch_dir:

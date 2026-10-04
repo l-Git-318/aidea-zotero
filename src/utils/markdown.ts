@@ -60,7 +60,7 @@ const KATEX_OPTIONS: katex.KatexOptions = {
   throwOnError: false,
   errorColor: "#cc0000",
   strict: false,
-  trust: true,
+  trust: false,
   macros: {
     "\\R": "\\mathbb{R}",
     "\\N": "\\mathbb{N}",
@@ -94,14 +94,32 @@ function escapeAttr(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function safeWebUrl(raw: string): string | null {
+  const value = raw.trim();
+  if (/[\u0000-\u0020\u007f]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password)
+      return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
 function renderImage(src: string, alt: string, title?: string): string {
   const safeSrc = src.trim();
-  if (!safeSrc) return escapeHtml(`![${alt}](${src})`);
-  const titleAttr =
-    typeof title === "string" && title.trim()
-      ? ` title="${escapeAttr(title.trim())}"`
-      : "";
-  return `<img class="llm-markdown-image" src="${escapeAttr(safeSrc)}" alt="${escapeAttr(alt)}"${titleAttr} loading="lazy"/>`;
+  // Only inert, embedded raster images auto-load. External images require a click.
+  if (
+    /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(safeSrc)
+  ) {
+    const titleAttr = title ? ` title="${escapeAttr(title)}"` : "";
+    return `<img class="llm-markdown-image" src="${escapeAttr(safeSrc)}" alt="${escapeAttr(alt)}"${titleAttr} loading="lazy"/>`;
+  }
+  const url = safeWebUrl(src);
+  return url
+    ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer"${title ? ` title="${escapeAttr(title)}"` : ""}>${escapeHtml(alt || "Image")}</a>`
+    : escapeHtml(`![${alt}](${src})`);
 }
 
 /** Generate the copy button HTML for code/math blocks */
@@ -784,6 +802,16 @@ function renderInline(text: string): string {
     (_m, alt, src, title) => protect(renderImage(src, alt, title)),
   );
 
+  // Build links before escaping, with an explicit protocol allowlist.
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, rawUrl) => {
+    const url = safeWebUrl(rawUrl);
+    return protect(
+      url
+        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
+        : escapeHtml(label),
+    );
+  });
+
   // 5. HTML escape (after protecting code, math, and images)
   result = escapeHtml(result);
 
@@ -827,12 +855,6 @@ function renderInline(text: string): string {
   result = result.replace(
     /(^|[\s(])_([^\s_])_(?=[\s).,!?:;]|$)/g,
     "$1<em>$2</em>",
-  );
-
-  // 11. Links [text](url)
-  result = result.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener">$1</a>',
   );
 
   // 12. Restore protected blocks.
